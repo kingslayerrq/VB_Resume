@@ -58,3 +58,6 @@ Thumbs.db
 /output
 /scraped_jobs
 /profiles
+
+master_resume.json
+temp_tailored.json
