@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page {
+            size: Letter;
+            /* Margins are handled by Playwright, but we set a fallback here */
+            margin: {{ style.margin }}; 
+        }
+        body {
+            font-family: 'Times New Roman', 'Arial', sans-serif;
+            font-size: {{ style.body_font }};  /* Dynamic Font Size */
+            line-height: {{ style.line_height }}; /* Dynamic Line Height */
+            color: #000;
+            margin: 0;
+            padding: 0;
+        }
+        /* Header Style */
+        header {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        h1 {
+            font-size: {{ style.header_font }}; /* Dynamic Header */
+            font-weight: bold;
+            margin: 0;
+            text-transform: uppercase;
+        }
+        .contact-info {
+            font-size: {{ style.body_font }};
+            margin-top: 3px;
+        }
+        .contact-info span {
+            margin: 0 3px;
+        }
+        a { color: #000; text-decoration: none; }
+
+        /* Section Headings */
+        h2 {
+            font-size: {{ style.sub_font }}; /* Dynamic Subheader */
+            font-weight: bold;
+            text-transform: uppercase;
+            border-bottom: 1px solid #000;
+            margin-top: 10px;
+            margin-bottom: 5px;
+            padding-bottom: 2px;
+        }
+
+        /* Content Layout */
+        .entry-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            font-weight: bold;
+            font-size: {{ style.body_font }}; /* Match body font */
+        }
+        .entry-sub {
+            display: flex;
+            justify-content: space-between;
+            font-style: italic;
+            font-size: {{ style.body_font }};
+            margin-bottom: 2px;
+        }
+        ul {
+            margin: 2px 0;
+            padding-left: 1.2em;
+        }
+        li {
+            margin-bottom: 1px;
+        }
+        
+        /* Skills Section (Bottom) */
+        .skills-list {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+        .skills-row {
+            margin-bottom: 2px;
+        }
+        .skill-category {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>{{ resume.basics.name }}</h1>
+        <div class="contact-info">
+            {{ resume.basics.location }} | 
+            <a href="mailto:{{ resume.basics.email }}">{{ resume.basics.email }}</a> | 
+            {{ resume.basics.phone }} |
+            <a href="{{ resume.basics.linkedin }}">LinkedIn</a> |
+            <a href="{{ resume.basics.github }}">GitHub</a>
+        </div>
+    </header>
+
+    <section>
+        <h2>Work Experience</h2>
+        {% for job in resume.experience %}
+        <div style="margin-bottom: 10px;">
+            <div class="entry-header">
+                <span>{{ job.position }}</span>
+                <span>{{ job.startDate }} – {{ job.endDate }}</span>
+            </div>
+            <div class="entry-sub">
+                <span>{{ job.company }}</span>
+                <span>{{ job.location|default('New York, NY') }}</span>
+            </div>
+            <ul>
+                {% for bullet in job.bullets %}
+                <li>{{ bullet }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endfor %}
+    </section>
+
+    <section>
+        <h2>Technical Projects</h2>
+        {% for project in resume.projects %}
+        <div style="margin-bottom: 10px;">
+            <div class="entry-header">
+                <span>{{ project.name }}</span>
+                <span style="font-weight: normal; font-style: italic; font-size: {{ style.body_font }};">
+                    {{ project.technologies|join(' | ') }}
+                </span>
+            </div>
+            <ul>
+                {% for bullet in project.bullets %}
+                <li>{{ bullet }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endfor %}
+    </section>
+
+    <section>
+        <h2>Education</h2>
+        {% for school in resume.education %}
+        <div style="margin-bottom: 5px;">
+            <div class="entry-header">
+                <span>{{ school.institution }}</span>
+                <span>{{ school.startDate }} – {{ school.endDate }}</span>
+            </div>
+            <div class="entry-sub">
+                <span>{{ school.studyType }} in {{ school.area }}</span>
+            </div>
+            {% if school.courses %}
+            <div style="font-size: {{ style.body_font }}; margin-top: 2px;">
+                <strong>Coursework:</strong> {{ school.courses|join(', ') }}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </section>
+
+    <section>
+        <h2>Technical Skills</h2>
+        <ul class="skills-list">
+            <li class="skills-row"><span class="skill-category">Languages:</span> {{ resume.skills.languages|join(', ') }}</li>
+            <li class="skills-row"><span class="skill-category">Game Dev:</span> Unity3D, AR Foundation, Shader Graph, C#</li>
+            <li class="skills-row"><span class="skill-category">Web Dev:</span> {{ resume.skills.frameworks|join(', ') }}</li>
+            <li class="skills-row"><span class="skill-category">DevOps & Tools:</span> {{ resume.skills.tools|join(', ') }}</li>
+        </ul>
+    </section>
+
+</body>
+</html>
