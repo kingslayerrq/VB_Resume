@@ -8,3 +8,11 @@ repos:
         types: [python]
         pass_filenames: false  # Runs tests on the whole project, not just changed files
         always_run: true
+        
+    -   id: run-linter
+        name: 🧹 Run Ruff
+        entry: ruff check .
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true

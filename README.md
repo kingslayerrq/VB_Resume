@@ -50,4 +50,4 @@ You don't need to keep the app open!
 * **Rendering:** Jinja2 + Playwright
 
 ---
-*Created by [Kingslayerrq]*
+*Created by [Kingslayerrq with Vibe]*
