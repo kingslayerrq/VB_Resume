@@ -11,14 +11,16 @@ DEFAULT_CONFIG = {
     "location": "New York",
     "target": 3,
     "safety_limit": 50,
-    "enable_discord": True,
+    "enable_discord": False,
     "hours_old": 72,
     "scrape_sites": ["linkedin"],
     "job_type": ["fulltime"],
     "is_remote": False,
     "distance": 50,
     "fetch_full_desc": True,
-    "blacklist": ["Manager", "Senior", "Director"]
+    "blacklist": ["Manager", "Senior", "Director"],
+    "use_email": False,
+    "email_max_results": 10
 }
 
 def load_config(file_path=None):

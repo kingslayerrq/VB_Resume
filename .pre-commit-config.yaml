@@ -1,0 +1,10 @@
+repos:
+-   repo: local
+    hooks:
+    -   id: run-tests
+        name: 🧪 Run Pytest
+        entry: python -X utf8 -m pytest
+        language: system
+        types: [python]
+        pass_filenames: false  # Runs tests on the whole project, not just changed files
+        always_run: true

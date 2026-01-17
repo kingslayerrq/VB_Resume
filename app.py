@@ -123,6 +123,23 @@ with st.sidebar:
 
         fetch_full_desc = st.checkbox("Deep Fetch LinkedIn", value=config.get('fetch_full_desc', True))
 
+    # GROUP B.2: SOURCES 
+    with st.expander("📧 Email Integration", expanded=True):
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            use_email = st.toggle("Enable Gmail Scraper", value=config.get('use_email', True))
+        with c2:
+            email_limit = st.number_input(
+                "Max unread Emails to Check (Will mark as read)", 
+                min_value=1, 
+                max_value=50, 
+                value=config.get('email_max_results', 10),
+                disabled=not use_email, # Gray out if disabled
+                help="How many recent unread 'Job Alert' emails to verify."
+            )
+        
+        st.caption("ℹ️ Scans for 'Job Alert' emails from LinkedIn.")
+
     # GROUP C: ADVANCED (Hidden by default)
     with st.expander("⚙️ Advanced & Limits", expanded=False):
         new_target = st.number_input("Success Target", 1, 50, value=config['target'], help="Number of successful resumes to generate before stopping.")
@@ -135,11 +152,11 @@ with st.sidebar:
         st.markdown("### API Keys")
         new_openai = st.text_input("OpenAI Key", value=config['openai_key'], type="password")
         new_discord = st.text_input("Discord Webhook", value=config['discord_webhook'])
-        enable_discord = st.checkbox("Enable Notifications", value=config.get('enable_discord', False))
+        enable_discord = st.checkbox("Enable Notifications", value=config.get('enable_discord', False), help="Toggle Discord notifications on or off.")
 
     # --- 3. SAVE ACTION ---
     st.markdown("---")
-    if st.button("💾 Save Settings", type="primary", use_container_width=True):
+    if st.button("💾 Save Settings", type="primary", width="stretch"):
         updated_config = config.copy()
         updated_config.update({
             "openai_key": new_openai,
@@ -155,7 +172,9 @@ with st.sidebar:
             "fetch_full_desc": fetch_full_desc,
             "target": new_target,
             "safety_limit": new_limit,
-            "blacklist": blacklist_list
+            "blacklist": blacklist_list,
+            "use_email": use_email,
+            "email_max_results": email_limit,
         })
         save_config(updated_config, current_profile_path)
         st.toast(f"Settings saved to {selected_profile}!", icon="✅")
@@ -209,6 +228,8 @@ with tab1:
                             "distance": config.get("distance", 50),
                             "fetch_full_desc": config.get("fetch_full_desc", True),
                             "blacklist": config.get("blacklist", []),
+                            "use_email": config.get("use_email", False),
+                            "email_max_results": config.get("email_max_results", 10),
                         }
 
                         asyncio.run(
@@ -306,6 +327,7 @@ with tab2:
             except json.JSONDecodeError as e:
                 st.error(f"❌ Invalid JSON: {e}")
 
+# --- TAB 3: AUTOMATION ---
 with tab3:
     st.header(f"⚡ Automate: {selected_profile}")
     st.markdown(f"Generate a task specifically for the **{config['role']}** profile.")
@@ -381,7 +403,7 @@ timeout /t 10
         **To wake up computer:** Right-click the new task > Properties > Conditions > Check "Wake the computer to run this task".
         """)
 
-# --- TAB 4: HISTORY ---
+# --- TAB 4: DAILY RESULTS ---
 with tab4:
     st.subheader("📄 Daily Results")
 
@@ -389,53 +411,99 @@ with tab4:
     csv_path = os.path.join("scraped_jobs", f"jobs_found_{today_str}.csv")
     output_dir = os.path.join("output", today_str)
 
+    # 1. LOAD HISTORY (To lookup Drive Links)
+    drive_map = {}
+    if os.path.exists("history.json"):
+        try:
+            with open("history.json", "r") as f:
+                hist_data = json.load(f)
+                # Create a dictionary: { Job_URL : Drive_Link }
+                for h in hist_data:
+                    if h.get("drive_link"):
+                        drive_map[h["url"]] = h["drive_link"]
+        except:
+            pass # Ignore errors if file is busy/corrupt
+
     if os.path.exists(csv_path) and os.path.exists(output_dir):
         df = pd.read_csv(csv_path)
+
+        # Quick Stats
+        if "Source" in df.columns:
+            c1, c2 = st.columns(2)
+            c1.metric("📧 From Emails", len(df[df['Source'] == 'Email']))
+            c2.metric("🌐 From Web Scraper", len(df[df['Source'] == 'Web']))
+            st.divider()
 
         results_container = st.container()
 
         with results_container:
             found_pdfs = 0
             for index, row in df.iterrows():
-                # Reconstruct the expected filename using the Helper Function
                 pdf_name = get_clean_filename(row["Company"], row["Title"])
                 full_pdf_path = os.path.join(output_dir, pdf_name)
+                
+                # Determine Icon
+                source_icon = "🌐"
+                if "Source" in row and row["Source"] == "Email":
+                    source_icon = "📧"
+                
+                # Lookup Drive Link
+                my_drive_link = drive_map.get(row["URL"])
 
                 if os.path.exists(full_pdf_path):
                     found_pdfs += 1
                     with st.expander(
-                        f"✅ {row['Company']} - {row['Title']}", expanded=True
+                        f"{source_icon} ✅ {row['Company']} - {row['Title']}", expanded=True
                     ):
-                        c1, c2, c3 = st.columns([2, 1, 1])
+                        # UPDATED COLUMNS: Added a 4th column for Drive Button
+                        c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+                        
                         with c1:
                             st.caption("Job Source URL")
                             st.write(f"{row['URL']}")
+                            if "Source" in row:
+                                st.caption(f"Detected via: {row['Source']}")
+                        
                         with c2:
                             with open(full_pdf_path, "rb") as f:
                                 st.download_button(
-                                    label="⬇️ Download PDF",
+                                    label="⬇️ PDF",
                                     data=f,
                                     file_name=pdf_name,
                                     mime="application/pdf",
                                     type="primary",
                                     width="stretch",
                                 )
+                        
                         with c3:
-                            st.link_button("🔗 Apply Now", row["URL"], width="stretch")
+                            # GOOGLE DRIVE BUTTON
+                            if my_drive_link:
+                                st.link_button(
+                                    "☁️ Drive", 
+                                    my_drive_link, 
+                                    width="stretch"
+                                )
+                            else:
+                                # Add unique 'key' using the loop index
+                                st.button(
+                                    "☁️ N/A", 
+                                    disabled=True, 
+                                    width="stretch",
+                                    key=f"drive_na_{index}" 
+                                )
+
+                        with c4:
+                            st.link_button("🔗 Apply", row["URL"], width="stretch")
 
             if found_pdfs == 0:
-                st.warning(
-                    "Jobs were found, but no Resumes were generated yet (Checks failed or in progress)."
-                )
+                st.warning("Jobs were found, but no Resumes were generated yet.")
             else:
                 st.success(f"Showing {found_pdfs} generated resumes for today.")
 
     else:
-        st.info(
-            f"No activity found for today ({today_str}). Run the workflow to see results here."
-        )
+        st.info(f"No activity found for today ({today_str}).")
 
-# --- TAB 5: LOGS ---
+# --- TAB 5: ANALYTICS & LOGS ---
 with tab5:
     st.subheader("📊 Activity Log")
 
@@ -452,39 +520,82 @@ with tab5:
             history = []
 
         if history:
+            # 1. Create DataFrame
             hist_df = pd.DataFrame(history)
 
+            # 2. Handle Missing Columns (Backwards Compatibility)
+            if "source" not in hist_df.columns:
+                hist_df["source"] = "Web" # Default for old entries
+            
+            # Fill N/A values to prevent errors
+            hist_df["source"] = hist_df["source"].fillna("Web")
+            hist_df["company"] = hist_df["company"].fillna("Unknown")
+            hist_df["title"] = hist_df["title"].fillna("Unknown")
+
+            # 3. Add Visual Helpers
             def get_status_icon(status):
-                if status == "GENERATED":
-                    return "✅"
-                elif status == "FAILED_CONTENT":
-                    return "❌"
-                elif status == "FILTERED_OUT":
-                    return "⚠️"
-                elif "Duplicate" in str(status):
-                    return "🔄"
-                else:
-                    return "❓"
+                if status == "GENERATED": return "✅"
+                elif status == "FAILED_CONTENT": return "❌"
+                elif status == "FILTERED_OUT": return "⚠️"
+                elif "Duplicate" in str(status): return "🔄"
+                else: return "❓"
+
+            def get_source_icon(source):
+                if source == "Email": return "📧"
+                return "🌐"
 
             if "status" in hist_df.columns:
                 hist_df["icon"] = hist_df["status"].apply(get_status_icon)
-                cols = ["icon", "date", "company", "title", "status", "url"]
-                existing_cols = [c for c in cols if c in hist_df.columns]
-                hist_df = hist_df[existing_cols]
+                hist_df["source_icon"] = hist_df["source"].apply(get_source_icon)
+
+                # --- 4. FILTERS UI ---
+                c1, c2, c3 = st.columns([2, 1, 1])
+                with c1:
+                    search_term = st.text_input("🔍 Search Log", placeholder="Company or Title...")
+                with c2:
+                    filter_status = st.multiselect("Status", hist_df["status"].unique(), default=[])
+                with c3:
+                    filter_source = st.multiselect("Source", hist_df["source"].unique(), default=[])
+
+                # --- 5. APPLY FILTERS ---
+                filtered_df = hist_df.copy()
+                
+                # Text Search
+                if search_term:
+                    filtered_df = filtered_df[
+                        filtered_df["company"].str.contains(search_term, case=False) | 
+                        filtered_df["title"].str.contains(search_term, case=False)
+                    ]
+                
+                # Dropdown Filters
+                if filter_status:
+                    filtered_df = filtered_df[filtered_df["status"].isin(filter_status)]
+                if filter_source:
+                    filtered_df = filtered_df[filtered_df["source"].isin(filter_source)]
+
+                # --- 6. DISPLAY TABLE ---
+                # Select and reorder columns
+                cols_to_show = ["icon", "source_icon", "date", "company", "title", "status", "source", "url"]
+                # Only grab columns that actually exist (safety)
+                final_cols = [c for c in cols_to_show if c in filtered_df.columns]
+                
+                display_df = filtered_df[final_cols]
 
                 st.dataframe(
-                    hist_df.sort_values(by="date", ascending=False),
+                    display_df.sort_values(by="date", ascending=False),
                     column_config={
-                        "icon": st.column_config.TextColumn("State", width="small"),
+                        "icon": st.column_config.TextColumn("St", width="small", help="Status"),
+                        "source_icon": st.column_config.TextColumn("Src", width="small", help="Source Type"),
                         "url": st.column_config.LinkColumn("Job Link"),
                         "status": st.column_config.TextColumn("Detail"),
-                        "date": st.column_config.DateColumn(
-                            "Date", format="YYYY-MM-DD"
-                        ),
+                        "source": st.column_config.TextColumn("Source Type"),
+                        "date": st.column_config.DateColumn("Date", format="YYYY-MM-DD"),
                     },
                     width="stretch",
                     hide_index=True,
                 )
+                
+                st.caption(f"Showing {len(display_df)} of {len(hist_df)} records.")
             else:
                 st.dataframe(hist_df)
         else:

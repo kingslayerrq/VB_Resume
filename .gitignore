@@ -61,3 +61,25 @@ Thumbs.db
 
 master_resume.json
 temp_tailored.json
+history.json
+
+# Google Auth Secrets
+credentials.json
+token.json
+
+# Streamlit Secrets 
+.streamlit/secrets.toml
+
+# Logs 
+*.log
+
+# Playwright artifacts 
+/test-results/
+/playwright-report/
+/browsers/
+
+# PDF Files 
+*.pdf
+
+# Mac System Files 
+.DS_Store

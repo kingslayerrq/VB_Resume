@@ -5,15 +5,18 @@ import time
 import asyncio
 import argparse
 import re
-from datetime import timedelta
+from datetime import timedelta, datetime
 import fitz  # PyMuPDF
-from datetime import datetime
-from agents.search_agent import search_jobs
+
+# Agents
+from agents.search_agent import search_jobs, fetch_job_page_data 
 from agents.tailor_agent import tailor_resume
 from agents.layout_agent import render_resume
 from agents.proofread_agent import proofread_resume
 from agents.filter_agent import assess_job_suitability
-from agents.notification_agent import send_start_notification, send_summary_notification
+from services.notification.notification_agent import send_start_notification, send_summary_notification
+from services.google.drive_agent import upload_resume_to_drive
+from services.google.gmail_job_agent import fetch_job_urls_from_gmail
 
 # --- CONFIGURATION ---
 BASE_OUTPUT_DIR = "output"
@@ -48,14 +51,16 @@ def is_duplicate(job_url, title, company):
                 return True
     return False
 
-def save_to_history(job_url, title, company, status):
+def save_to_history(job_url, title, company, status, drive_link=None, source=None):
     history = load_history()
     entry = {
         "url": job_url,
         "title": str(title),
         "company": str(company),
         "date": datetime.now().strftime("%Y-%m-%d"),
-        "status": status
+        "status": status,
+        "drive_link": drive_link,
+        "source": source
     }
     history.append(entry)
     with open(HISTORY_FILE, "w") as f:
@@ -110,6 +115,7 @@ async def generate_resume_for_job(jd_text, master_json_path, output_filename, st
 
 # --- THE WORKFLOW ---
 async def run_daily_workflow(role, location, target_successes, safety_limit, enable_discord, scrape_config, status_callback=None):
+    # Setup Directories
     today_str = datetime.now().strftime("%Y-%m-%d")
     daily_output_dir = os.path.join(BASE_OUTPUT_DIR, today_str)
     os.makedirs(daily_output_dir, exist_ok=True)
@@ -119,15 +125,16 @@ async def run_daily_workflow(role, location, target_successes, safety_limit, ena
     success_count = 0
     total_checked = 0
     current_offset = 0
-    batch_size = 10
+    batch_size = 5
     processed_urls_session = set()
+    # Successful Jobs Data To Send in Notification
     successful_jobs_data = []
 
     # 1. NOTIFY START
     send_start_notification(role, location, target_successes, enabled=enable_discord)
     log(f"\n🎯 GOAL: Generate {target_successes} successful resumes.", status_callback)
-    log(f"🛡️ Safety Limit set to {safety_limit} jobs checked.", status_callback)
-    
+    log("⚔️  MODE: Parallel Hunt (Email + Web)", status_callback)
+
     # --- MAIN LOOP ---
     while success_count < target_successes:
         if total_checked >= safety_limit:
@@ -136,7 +143,14 @@ async def run_daily_workflow(role, location, target_successes, safety_limit, ena
 
         log(f"\n📡 Fetching batch (Offset {current_offset})...", status_callback)
         
-        job_batch = search_jobs(
+        # ==========================================================
+        # 🚀 PARALLEL EXECUTION LOGIC
+        # ==========================================================
+        
+        # 1. Define the WEB Task (Runs every loop)
+        #    The Web Agent IS affected by the loop/target (it runs until we stop).
+        web_task = asyncio.to_thread(
+            search_jobs,
             role, 
             location, 
             num_results=batch_size, 
@@ -148,75 +162,159 @@ async def run_daily_workflow(role, location, target_successes, safety_limit, ena
             distance=scrape_config.get('distance'),
             fetch_full_desc=scrape_config.get('fetch_full_desc')
         )
+
+        # 2. Define the EMAIL Task (Runs ONLY on first loop)
+        use_email = scrape_config.get('use_email', False)
+        email_limit = scrape_config.get('email_max_results', 10)
+        if current_offset == 0 and use_email:
+            log(f"   📧 Email Scraper Active (Limit: {email_limit})", status_callback)
+            email_task = asyncio.to_thread(fetch_job_urls_from_gmail, max_results=email_limit)
+        else:
+            # On subsequent loops, return empty list instantly (don't check email again)
+            email_task = asyncio.create_task(asyncio.sleep(0, result=[]))
+
+        # 3. Execute Both Simultaneously
+        log("   ⏳ Waiting for Gmail and JobSpy...", status_callback)
+        web_results, email_results = await asyncio.gather(web_task, email_task)
+
+        # 4. Tag the Sources
+        # We manually add the 'Source' key here since the agents might not return it
+        for j in email_results: j['Source'] = 'Email'
+        for j in web_results:   j['Source'] = 'Web'
+
+        # 5. Combine (Email first, usually higher quality/relevance)
+        job_batch = email_results + web_results
         
+        log(f"   ✅ Batch received: {len(email_results)} from Email, {len(web_results)} from Web.", status_callback)
+        # ==========================================================
+
         if not job_batch:
-            log("⚠️ No more jobs found.", status_callback)
+            log("⚠️ No more jobs found from any source.", status_callback)
             break
 
-        # Log Batch
+        # Log Batch to CSV (We log EVERYTHING found, even if we don't process it yet)
         file_exists = os.path.isfile(csv_log_path)
+        fieldnames = ["Company", "Title", "URL", "Scraped_Date", "Source"]
         with open(csv_log_path, mode='a', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=["Company", "Title", "URL", "Scraped_Date"])
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
             if not file_exists: writer.writeheader()
             for j in job_batch:
                 writer.writerow({
-                    "Company": str(j['company']), 
-                    "Title": str(j['title']), 
+                    "Company": str(j.get('company', 'Unknown')), 
+                    "Title": str(j.get('title', 'Unknown')), 
                     "URL": j['url'], 
-                    "Scraped_Date": today_str
+                    "Scraped_Date": today_str,
+                    "Source": j.get('Source', 'Unknown')
                 })
 
         # Process Batch
         for job in job_batch:
-            if success_count >= target_successes: break
+            # --- CRITICAL: STOP CONDITION ---
+            # If we hit the target mid-batch, STOP EVERYTHING.
+            # This prevents "recording further jobs to history" or doing extra AI work.
+            if success_count >= target_successes: 
+                log(f"   🎉 Target met ({success_count}/{target_successes}). Stopping early.", status_callback)
+                break
 
             total_checked += 1
             log(f"\n💼 Checking Job {total_checked} (Target: {success_count}/{target_successes})", status_callback)
-            log(f"   {job['title']} @ {job['company']}", status_callback)
+            log(f"   {job.get('title', 'Job')} @ {job.get('company', 'Company')} [{job['Source']}]", status_callback)
 
             if job['url'] in processed_urls_session: continue
             processed_urls_session.add(job['url'])
 
-            if is_duplicate(job['url'], job['title'], job['company']):
+            if is_duplicate(job['url'], job.get('title', ''), job.get('company', '')):
                 log("   ⏭️  Duplicate. Skipping.", status_callback)
                 continue
 
+            # --- DEEP SCRAPE IF NEEDED ---
+            is_generic_title = "Detected via Email" in job.get('title', '')
+            
+            if not job.get('description') or len(job.get('description', '')) < 50 or is_generic_title:
+                log("   🔍 Fetching full job details...", status_callback)
+                
+                # Fetch Data
+                scraped_data = await fetch_job_page_data(job['url'])
+                
+                # Update Description
+                job['description'] = scraped_data.get('description', '')
+
+                # Update Metadata (Overwrite placeholders if we found real data)
+                if scraped_data.get('title'):
+                    job['title'] = scraped_data['title']
+                if scraped_data.get('company'):
+                    job['company'] = scraped_data['company']
+                
+                # --- NEW STRICT VALIDATION ---
+                has_desc = job.get('description') and len(job['description']) > 50
+                has_title = job.get('title') and "Detected via Email" not in job['title']
+                has_company = job.get('company') and "LinkedIn Import" not in job['company']
+
+                if not (has_desc and has_title and has_company):
+                    log("      ⚠️ Scrape Incomplete. Missing Metadata. Skipping.", status_callback)
+                    log(f"         (Desc: {has_desc}, Title: {has_title}, Company: {has_company})", status_callback)
+                    
+                    # Save as failed so we don't try again
+                    save_to_history(
+                        job['url'], 
+                        job.get('title', 'Unknown'), 
+                        job.get('company', 'Unknown'), 
+                        "FAILED_SCRAPE", 
+                        source=job.get('Source')
+                    )
+                    continue
+                
+                log(f"      ✨ Updated Info: {job['title']} @ {job['company']}", status_callback)
+
+            # Now that we have the REAL title, check history one last time to be safe
+            if is_duplicate(job['url'], job['title'], job['company']):
+                 log("   ⏭️  Duplicate Content (Found after scrape). Skipping.", status_callback)
+                 save_to_history(job['url'], job['title'], job['company'], "Duplicate", source=job.get('Source'))
+                 continue
+
+            # Assessment
             assessment = assess_job_suitability(job['description'], "master_resume.json")
             if not assessment.is_suitable:
                 log(f"   🛑 SKIPPING: Match Score {assessment.match_score}/100", status_callback)
-                save_to_history(job['url'], job['title'], job['company'], "FILTERED_OUT")
+                save_to_history(job['url'], job.get('title', ''), job.get('company', ''), "FILTERED_OUT", source=job['Source'])
                 continue 
 
             log(f"   ✅ MATCH! Score {assessment.match_score}/100. Generating...", status_callback)
 
-            company_clean = "".join(c for c in str(job['company']) if c.isalnum())
-            role_clean = "".join(c for c in str(job['title']) if c.isalnum())[:15]
+            # Generate Filenames & Paths
+            company_clean = "".join(c for c in str(job.get('company', 'Job')) if c.isalnum())
+            role_clean = "".join(c for c in str(job.get('title', 'Role')) if c.isalnum())[:15]
             filename = f"Resume_{company_clean}_{role_clean}.pdf"
             output_path = os.path.join(daily_output_dir, filename)
             
-            # Pass callback to generator
+            # Tailor & Render
             success = await generate_resume_for_job(job['description'], "master_resume.json", output_path, status_callback)
             
             if success:
                 log(f"   📁 SAVED: {output_path}", status_callback)
-                save_to_history(job['url'], job['title'], job['company'], "GENERATED")
+                drive_link = upload_resume_to_drive(output_path)
+                
+                # Save to History (Only successful ones)
+                save_to_history(job['url'], job.get('title', ''), job.get('company', ''), "GENERATED", drive_link=drive_link, source=job['Source'])
                 success_count += 1
                 successful_jobs_data.append({
-                    "company": job['company'],
-                    "role": job['title'],
+                    "company": job.get('company', 'Unknown'),
+                    "role": job.get('title', 'Unknown'),
                     "url": job['url'],
-                    "pdf_path": output_path
+                    "pdf_path": output_path,
+                    "source": job['Source']
                 })
             else:
                 if os.path.exists(output_path): os.remove(output_path)
-                save_to_history(job['url'], job['title'], job['company'], "FAILED_CONTENT")
+                save_to_history(job['url'], job.get('title', ''), job.get('company', ''), "FAILED_CONTENT", source=job['Source'])
             
             time.sleep(2)
 
+        # Break the OUTER loop if target is met
         if success_count >= target_successes: break
         
         current_offset += batch_size
-        log(f"   ---> Fetching next batch...", status_callback)
+        log("   ---> Fetching next batch...", status_callback)
         time.sleep(5)
 
     # 2. NOTIFY END
@@ -230,6 +328,5 @@ if __name__ == "__main__":
     parser.add_argument("--target", type=int, default=3)
     
     args = parser.parse_args()
-    # Dummy config for CLI
     scrape_conf = {"hours_old": 24, "sites": ["linkedin"]}
     asyncio.run(run_daily_workflow(args.role, args.location, args.target, 50, True, scrape_conf))
