@@ -36,7 +36,7 @@ def assess_job_suitability(jd_text, master_json_path):
         "years_experience": "Entry Level / Junior (approx 1-2 years including internships)" 
     }
 
-    print(f"   ⚖️  Assessing suitability (via gpt-4o-mini)...")
+    print("   ⚖️  Assessing suitability (via gpt-4o-mini)...")
 
     system_prompt = """
     You are a Career Coach. Evaluate if a Candidate is a reasonable match for a Job Description.

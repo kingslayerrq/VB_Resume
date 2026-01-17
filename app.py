@@ -103,7 +103,8 @@ with st.sidebar:
     with st.expander("🛠️ Filters & Scraper", expanded=True):
         # Row 1: Types & Remote
         current_job_type = config.get('job_type', ["fulltime"])
-        if isinstance(current_job_type, str): current_job_type = [current_job_type]
+        if isinstance(current_job_type, str): 
+            current_job_type = [current_job_type]
         
         job_type = st.multiselect("Job Type", ["fulltime", "internship", "contract", "parttime"], default=current_job_type)
         is_remote = st.checkbox("Remote Only", value=config.get('is_remote', False))
@@ -421,7 +422,7 @@ with tab4:
                 for h in hist_data:
                     if h.get("drive_link"):
                         drive_map[h["url"]] = h["drive_link"]
-        except:
+        except Exception:
             pass # Ignore errors if file is busy/corrupt
 
     if os.path.exists(csv_path) and os.path.exists(output_dir):
@@ -534,14 +535,20 @@ with tab5:
 
             # 3. Add Visual Helpers
             def get_status_icon(status):
-                if status == "GENERATED": return "✅"
-                elif status == "FAILED_CONTENT": return "❌"
-                elif status == "FILTERED_OUT": return "⚠️"
-                elif "Duplicate" in str(status): return "🔄"
-                else: return "❓"
+                if status == "GENERATED": 
+                    return "✅"
+                elif status == "FAILED_CONTENT": 
+                    return "❌"
+                elif status == "FILTERED_OUT": 
+                    return "⚠️"
+                elif "Duplicate" in str(status): 
+                    return "🔄"
+                else: 
+                    return "❓"
 
             def get_source_icon(source):
-                if source == "Email": return "📧"
+                if source == "Email": 
+                    return "📧"
                 return "🌐"
 
             if "status" in hist_df.columns:

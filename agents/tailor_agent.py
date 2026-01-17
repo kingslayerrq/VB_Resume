@@ -73,7 +73,7 @@ def tailor_resume(master_json_path: str, job_description: str, feedback: str = "
     with open(master_json_path, 'r') as f:
         master_resume_data = json.load(f)
 
-    print(f"🧵 Tailoring resume (Strict Bullet Count Enforcement)...")
+    print("🧵 Tailoring resume (Strict Bullet Count Enforcement)...")
 
     # --- UPDATED SYSTEM PROMPT ---
     system_prompt = """

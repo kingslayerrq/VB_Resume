@@ -43,6 +43,7 @@ async def fetch_job_page_data(url):
                             
                     print(f"   ✨ Extracted via JSON: {data['title']} @ {data['company']}")
             except Exception as e:
+                print(f"   ❌ JSON extraction failed: {e}")
                 # JSON extraction failed, proceed to fallback
                 pass
 
@@ -68,7 +69,8 @@ async def fetch_job_page_data(url):
                 # Try specific container first
                 await page.wait_for_selector(".description__text", timeout=2000)
                 data["description"] = await page.inner_text(".description__text")
-            except:
+            except Exception as e:
+                print(f"   ⚠️ Specific desc selector failed: {e}")
                 data["description"] = await page.inner_text("body")
 
         except Exception as e:

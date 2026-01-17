@@ -8,10 +8,12 @@ def get_webhook():
     return config.get("discord_webhook", "")
 
 def send_start_notification(role, location, target, enabled=True): 
-    if not enabled: return # Exit if toggle is off
+    if not enabled: 
+        return
     
     url = get_webhook()
-    if not url: return
+    if not url: 
+        return
 
     embed = {
         "title": "🚀 Resume Factory Started",
@@ -24,13 +26,16 @@ def send_start_notification(role, location, target, enabled=True):
     }
     try:
         requests.post(url, json={"embeds": [embed]})
-    except: pass
+    except Exception: 
+        pass
 
 def send_summary_notification(successful_jobs, enabled=True): 
-    if not enabled: return # Exit if toggle is off
+    if not enabled: 
+        return 
 
     url = get_webhook()
-    if not url: return
+    if not url: 
+        return
 
     if not successful_jobs:
         requests.post(url, json={"content": "⚠️ Workflow finished. 0 Resumes generated."})

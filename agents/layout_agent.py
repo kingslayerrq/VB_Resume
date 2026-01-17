@@ -1,6 +1,5 @@
 import json
 import os
-import asyncio
 from jinja2 import Environment, FileSystemLoader
 from playwright.async_api import async_playwright
 

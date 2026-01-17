@@ -1,5 +1,4 @@
 import pytest
-import os
 
 # We don't need sys.path.append anymore! 
 # Pytest handles it because this file is in the root.

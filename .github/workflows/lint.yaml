@@ -1,0 +1,17 @@
+name: 🧹 Code Quality
+
+on: [push, pull_request]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+    
+    - name: Install Ruff (Fast Linter)
+      run: pip install ruff
+
+    - name: Run Linter
+      run: ruff check .

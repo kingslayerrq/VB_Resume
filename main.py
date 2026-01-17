@@ -25,13 +25,18 @@ HISTORY_FILE = "history.json"
 
 # --- HISTORY MANAGER ---
 def load_history():
-    if not os.path.exists(HISTORY_FILE): return []
+    if not os.path.exists(HISTORY_FILE): 
+        return []
     try:
-        with open(HISTORY_FILE, "r") as f: return json.load(f)
-    except: return []
+        with open(HISTORY_FILE, "r") as f: 
+            return json.load(f)
+    except Exception as e: 
+        print(f"   ❌ Failed to load history: {e}")
+        return []
 
 def normalize_text(text):
-    if not text: return ""
+    if not text: 
+        return ""
     text = str(text) 
     return re.sub(r'[^a-zA-Z0-9]', '', text).lower()
 
@@ -42,7 +47,8 @@ def is_duplicate(job_url, title, company):
     sixty_days_ago = datetime.now() - timedelta(days=60)
     
     for entry in history:
-        if entry["url"] == job_url: return True
+        if entry["url"] == job_url: 
+            return True
         entry_date = datetime.strptime(entry["date"], "%Y-%m-%d")
         if entry_date > sixty_days_ago:
             hist_company = normalize_text(entry.get("company", ""))
@@ -84,7 +90,8 @@ async def generate_resume_for_job(jd_text, master_json_path, output_filename, st
         tailored_data = tailor_resume(master_json_path, jd_text, feedback=current_feedback)
         
         temp_json = "temp_tailored.json"
-        with open(temp_json, "w") as f: json.dump(tailored_data, f, indent=4)
+        with open(temp_json, "w") as f: 
+            json.dump(tailored_data, f, indent=4)
             
         await render_resume(temp_json, output_filename, scale=1.0)
         audit = proofread_resume(output_filename, jd_text)
@@ -179,8 +186,10 @@ async def run_daily_workflow(role, location, target_successes, safety_limit, ena
 
         # 4. Tag the Sources
         # We manually add the 'Source' key here since the agents might not return it
-        for j in email_results: j['Source'] = 'Email'
-        for j in web_results:   j['Source'] = 'Web'
+        for j in email_results: 
+            j['Source'] = 'Email'
+        for j in web_results:   
+            j['Source'] = 'Web'
 
         # 5. Combine (Email first, usually higher quality/relevance)
         job_batch = email_results + web_results
@@ -197,7 +206,8 @@ async def run_daily_workflow(role, location, target_successes, safety_limit, ena
         fieldnames = ["Company", "Title", "URL", "Scraped_Date", "Source"]
         with open(csv_log_path, mode='a', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
-            if not file_exists: writer.writeheader()
+            if not file_exists: 
+                writer.writeheader()
             for j in job_batch:
                 writer.writerow({
                     "Company": str(j.get('company', 'Unknown')), 
@@ -220,7 +230,8 @@ async def run_daily_workflow(role, location, target_successes, safety_limit, ena
             log(f"\n💼 Checking Job {total_checked} (Target: {success_count}/{target_successes})", status_callback)
             log(f"   {job.get('title', 'Job')} @ {job.get('company', 'Company')} [{job['Source']}]", status_callback)
 
-            if job['url'] in processed_urls_session: continue
+            if job['url'] in processed_urls_session: 
+                continue
             processed_urls_session.add(job['url'])
 
             if is_duplicate(job['url'], job.get('title', ''), job.get('company', '')):
@@ -305,13 +316,15 @@ async def run_daily_workflow(role, location, target_successes, safety_limit, ena
                     "source": job['Source']
                 })
             else:
-                if os.path.exists(output_path): os.remove(output_path)
+                if os.path.exists(output_path): 
+                    os.remove(output_path)
                 save_to_history(job['url'], job.get('title', ''), job.get('company', ''), "FAILED_CONTENT", source=job['Source'])
             
             time.sleep(2)
 
         # Break the OUTER loop if target is met
-        if success_count >= target_successes: break
+        if success_count >= target_successes: 
+            break
         
         current_offset += batch_size
         log("   ---> Fetching next batch...", status_callback)

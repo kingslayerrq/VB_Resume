@@ -71,7 +71,8 @@ def fetch_job_urls_from_gmail(max_results=10):
             else:
                 body_data = payload.get('body', {}).get('data', "")
                 
-            if not body_data: continue
+            if not body_data: 
+                continue
             
             html_content = base64.urlsafe_b64decode(body_data).decode('utf-8')
             soup = BeautifulSoup(html_content, 'html.parser')
