@@ -19,9 +19,38 @@ DEFAULT_CONFIG = {
     "distance": 50,
     "fetch_full_desc": True,
     "blacklist": ["Manager", "Senior", "Director"],
+    # Google Settings
+    "enable_google": False,
+    "enable_drive": False,
     "use_email": False,
     "email_max_results": 10
 }
+
+def get_effective_config(profile_path):
+    """
+    Loads the profile JSON and overrides settings based on 
+    environmental constraints (like missing API keys).
+    """
+    # 1. Load the raw user preferences
+    if not os.path.exists(profile_path):
+        return {}
+        
+    with open(profile_path, "r") as f:
+        config = json.load(f)
+
+    # 2. Check Environment / Dependencies
+    has_google_creds = os.path.exists("credentials.json")
+
+    # 3. Sanitize / Override
+    # If credentials are missing, we force these features OFF, 
+    # regardless of what the user saved in the JSON file.
+    if not has_google_creds:
+        config['enable_drive'] = False
+        config['use_email'] = False
+        config['enable_google'] = False
+        # You could also log a warning here if you wanted
+
+    return config
 
 def load_config(file_path=None):
     """

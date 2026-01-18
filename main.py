@@ -303,7 +303,13 @@ async def run_daily_workflow(role, location, target_successes, safety_limit, ena
             
             if success:
                 log(f"   📁 SAVED: {output_path}", status_callback)
-                drive_link = upload_resume_to_drive(output_path)
+                drive_link = None
+
+                # Upload to Drive if enabled
+                enable_drive = scrape_config.get('enable_drive', False)
+                if enable_drive:
+                    log("   ☁️ Uploading to Google Drive...", status_callback)
+                    drive_link = upload_resume_to_drive(output_path)
                 
                 # Save to History (Only successful ones)
                 save_to_history(job['url'], job.get('title', ''), job.get('company', ''), "GENERATED", drive_link=drive_link, source=job['Source'])
@@ -331,8 +337,10 @@ async def run_daily_workflow(role, location, target_successes, safety_limit, ena
         time.sleep(5)
 
     # 2. NOTIFY END
-    log("\n📨 Sending Discord Summary...", status_callback)
-    send_summary_notification(successful_jobs_data, enabled=enable_discord)
+    log(f"🎉 Workflow Complete! {success_count} Resumes Generated.", status_callback)
+    if enable_discord:
+        log("\n📨 Sending Discord Summary...", status_callback)
+        send_summary_notification(successful_jobs_data, enabled=enable_discord)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

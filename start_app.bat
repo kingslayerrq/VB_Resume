@@ -22,16 +22,12 @@ exit /b
 :FOUND
 echo [INFO] Using Python command: %PYTHON_CMD%
 
-:: --- [NEW] CHECK FOR CREDENTIALS ---
-if not exist "credentials.json" (
-    echo.
-    echo [WARNING] 'credentials.json' is missing!
-    echo The app needs this file to access Google Drive and Gmail.
-    echo Please create a Project in Google Cloud Console, download the OAuth JSON,
-    echo rename it to 'credentials.json', and place it in this folder.
-    echo.
-    echo Press any key to continue anyway (App might crash on Google tasks)...
-    pause >nul
+:: --- CHECK FOR CREDENTIALS (SOFT CHECK) ---
+if exist "credentials.json" (
+    echo [INFO] Google Credentials found. Cloud features CAN BE ENABLED.
+) else (
+    echo [INFO] No credentials found. Running in LOCAL MODE.
+    echo (Gmail scanning and Drive upload will be skipped)
 )
 
 :: --- 2. SETUP VIRTUAL ENV ---

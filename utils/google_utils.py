@@ -15,6 +15,9 @@ def get_google_service(api_name, api_version):
     Authenticates the user and returns a specific Google API Service.
     """
     creds = None
+    # Early exit if no credentials or token files exist
+    if not os.path.exists('credentials.json') and not os.path.exists('token.json'):
+        return None
     
     # 1. Load existing token
     if os.path.exists('token.json'):

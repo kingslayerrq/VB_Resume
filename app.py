@@ -7,7 +7,7 @@ import sys
 import json
 import pandas as pd
 import time
-from config_manager import load_config, save_config
+from config_manager import load_config, save_config, get_effective_config
 from main import run_daily_workflow
 from resume_schema import DEFAULT_RESUME
 from agents.resume_parser_agent import parse_resume_to_json
@@ -94,7 +94,7 @@ with st.sidebar:
 
     # Load Config
     current_profile_path = os.path.join("profiles", selected_profile)
-    config = load_config(current_profile_path)
+    config = get_effective_config(current_profile_path)
 
     st.markdown("---")
 
@@ -148,24 +148,6 @@ with st.sidebar:
             "Deep Fetch LinkedIn", value=config.get("fetch_full_desc", True)
         )
 
-    # GROUP B.2: SOURCES
-    with st.expander("📧 Email Integration", expanded=True):
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            use_email = st.toggle(
-                "Enable Gmail Scraper", value=config.get("use_email", True)
-            )
-        with c2:
-            email_limit = st.number_input(
-                "Max unread Emails to Check (Will mark as read)",
-                min_value=1,
-                max_value=50,
-                value=config.get("email_max_results", 10),
-                disabled=not use_email,  # Gray out if disabled
-                help="How many recent unread 'Job Alert' emails to verify.",
-            )
-
-        st.caption("ℹ️ Scans for 'Job Alert' emails from LinkedIn.")
 
     # GROUP C: ADVANCED (Hidden by default)
     with st.expander("⚙️ Advanced & Limits", expanded=False):
@@ -194,6 +176,72 @@ with st.sidebar:
             help="Comma-separated keywords to filter out jobs (e.g. 'Senior, Manager').",
         )
         blacklist_list = [x.strip() for x in blacklist_input.split(",") if x.strip()]
+
+        st.header("🔌 Integrations")
+        # Initialize variables
+        use_email = config.get("use_email", False)
+        email_limit = config.get("email_max_results", 10)
+        enable_drive = config.get("enable_drive", False)
+        enable_google = config.get("enable_google", False)
+
+        # Check if Google Credentials exist
+        has_google_creds = os.path.exists("credentials.json")
+        
+        # 1. GOOGLE INTEGRATION TOGGLE
+        enable_google = st.checkbox(
+            "Enable Google Cloud (Gmail/Drive)", 
+            value=config.get("enable_google", has_google_creds), # Default to ON if keys exist, OFF if they don't
+            disabled=not has_google_creds,
+            help="Requires 'credentials.json' in the root folder."
+        )
+
+        # !!! If the master switch is OFF, force the child settings to OFF.
+        # !!! This ensures they save as False even if their widgets are hidden.
+        if not enable_google:
+            use_email = False
+            enable_drive = False
+        
+        if not has_google_creds:
+            st.info("⚠️ Google features are disabled. Add `credentials.json` to enable Gmail scanning and Drive uploads.")
+        elif enable_google:
+            # Gmail Settings
+            with st.expander("☁️ Google Integrations (Gmail & Drive)", expanded=enable_google):
+            
+                # 1. GMAIL SECTION
+                st.markdown("**📧 Gmail Scraper**")
+                st.caption("Scan your Gmail for Job Boards emails to find links.")
+                
+                c1, c2 = st.columns([1, 2])
+                with c1:
+                    use_email = st.toggle(
+                        "Enable Gmail Scraper", 
+                        value=config.get("use_email", False) and enable_google,
+                        disabled=not enable_google  # Lock if no creds
+                    )
+                with c2:
+                    email_limit = st.number_input(
+                        "Max Emails to Scan",
+                        min_value=1,
+                        max_value=50,
+                        value=config.get("email_max_results", 10),
+                        disabled=not use_email,  # Lock if scraper is OFF
+                        help="Marks scanned emails as read to prevent duplicates."
+                    )
+
+                st.divider()  # Visual separation
+                
+                # 2. DRIVE SECTION
+                st.markdown("**💾 Cloud Storage**")
+                enable_drive = st.checkbox(
+                    "Upload Resumes to Google Drive",
+                    value=config.get("enable_drive", False) and enable_google,
+                    key="enable_drive_checkbox",
+                    disabled=not enable_google, # Lock if no creds
+                    help="Automatically uploads the generated PDF to a 'Resumes' folder."
+                )
+                
+                if not enable_google:
+                    st.caption("⚠️ *Add `credentials.json` to root folder to enable these features.*")
 
         st.markdown("### API Keys")
         new_openai = st.text_input(
@@ -226,6 +274,9 @@ with st.sidebar:
                 "target": new_target,
                 "safety_limit": new_limit,
                 "blacklist": blacklist_list,
+                # Google Settings
+                "enable_google": enable_google,
+                "enable_drive": enable_drive,
                 "use_email": use_email,
                 "email_max_results": email_limit,
             }
@@ -265,6 +316,40 @@ with tab1:
         log_window = st.empty()
 
         if start_btn:
+            # --- [NEW] AUTO-SAVE & SANITIZE ---
+            # 1. Capture user intent from UI
+            raw_user_config = config.copy()
+            raw_user_config.update({
+                "openai_key": new_openai,
+                "discord_webhook": new_discord,
+                "enable_discord": enable_discord,
+                "role": new_role,
+                "location": new_location,
+                "job_type": job_type,
+                "scrape_sites": selected_sites,
+                "is_remote": is_remote,
+                "distance": distance,
+                "hours_old": hours_old,
+                "fetch_full_desc": fetch_full_desc,
+                "target": new_target,
+                "safety_limit": new_limit,
+                "blacklist": blacklist_list,
+                # Google Settings
+                "enable_google": enable_google,
+                "enable_drive": enable_drive,
+                "use_email": use_email,
+                "email_max_results": email_limit,
+            })
+            
+            # 2. Save raw intent to disk
+            save_config(raw_user_config, current_profile_path)
+            
+            # 3. Reload the "Effective" config (The Safer Way)
+            config = get_effective_config(current_profile_path)
+            
+            st.toast("Settings auto-saved & verified!", icon="🛡️")
+            # ---------------------------------------
+
             if not config["openai_key"]:
                 st.error("❌ OpenAI API Key is missing!")
             else:
@@ -278,6 +363,7 @@ with tab1:
 
                 with st.spinner("🤖 Agents working..."):
                     try:
+                        # Construct scrape_conf using the FRESH 'config' variable
                         scrape_conf = {
                             "hours_old": config.get("hours_old", 72),
                             "sites": config.get("scrape_sites", ["linkedin"]),
@@ -286,6 +372,8 @@ with tab1:
                             "distance": config.get("distance", 50),
                             "fetch_full_desc": config.get("fetch_full_desc", True),
                             "blacklist": config.get("blacklist", []),
+                            "enable_google": config.get("enable_google", False),
+                            "enable_drive": config.get("enable_drive", False),
                             "use_email": config.get("use_email", False),
                             "email_max_results": config.get("email_max_results", 10),
                         }
@@ -554,17 +642,20 @@ with tab4:
                             # GOOGLE DRIVE BUTTON
                             if my_drive_link:
                                 st.link_button(
-                                    "☁️ Drive", my_drive_link, width="stretch"
+                                    "☁️ Drive", 
+                                    my_drive_link, 
+                                    width="stretch",
+                                    help="Open this PDF in Google Drive"
                                 )
                             else:
-                                # Add unique 'key' using the loop index
+                                # Disabled State
                                 st.button(
-                                    "☁️ N/A",
+                                    "☁️ Local Only",  # Changed text to be clearer
                                     disabled=True,
                                     width="stretch",
                                     key=f"drive_na_{index}",
+                                    help="Drive Upload was disabled when this resume was generated."
                                 )
-
                         with c4:
                             st.link_button("🔗 Apply", row["URL"], width="stretch")
 
