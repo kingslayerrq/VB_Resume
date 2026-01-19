@@ -1,7 +1,10 @@
 import fitz  # PyMuPDF
 import os
+from typing import Optional
+
 from pydantic import BaseModel
-from openai import OpenAI
+
+from services.llm_client import chat_json, resolve_llm_settings
 
 # --- 1. Define Schema ---
 class Critique(BaseModel):
@@ -9,22 +12,22 @@ class Critique(BaseModel):
     missing_keywords: list[str]
     feedback: str
 
-def proofread_resume(pdf_path: str, job_description: str) -> dict:
+def proofread_resume(
+    pdf_path: str,
+    job_description: str,
+    llm_settings: Optional[dict] = None,
+) -> dict:
     print(f"🧐 Proofreading {pdf_path}...")
 
-    # --- 0. SAFETY CHECK ---
-    if not os.environ.get("OPENAI_API_KEY"):
-        # Just return a pass if no key, so we don't crash the loop
-        print("   ⚠️ No OpenAI Key found in environment. Skipping Semantic Check.")
+    settings = resolve_llm_settings(llm_settings)
+    if settings["provider"] == "openai" and not os.environ.get("OPENAI_API_KEY") and not settings.get("api_key"):
+        print("   ⚠️ No OpenAI Key found. Skipping Semantic Check.")
         return {
-            "length_passed": True, # Assume OK
+            "length_passed": True,
             "content_passed": True,
             "feedback": "Skipped (No API Key)",
-            "page_count": 0
+            "page_count": 0,
         }
-
-    # Initialize Client HERE (Lazy Load)
-    client = OpenAI() 
 
     # --- 1. PHYSICAL CHECK (Length Only) ---
     doc = fitz.open(pdf_path)
@@ -63,22 +66,20 @@ def proofread_resume(pdf_path: str, job_description: str) -> dict:
     {text_content}
     """
 
-    try:
-        completion = client.beta.chat.completions.parse(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format=Critique,
-        )
+    system_prompt += "\nReturn ONLY valid JSON with no extra commentary."
 
-        result = completion.choices[0].message.parsed
+    try:
+        result = chat_json(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            llm_settings=llm_settings,
+            schema=Critique,
+        )
 
         return {
             "length_passed": length_passed,
-            "content_passed": result.content_passed,
-            "feedback": result.feedback,
+            "content_passed": result["content_passed"],
+            "feedback": result["feedback"],
             "page_count": num_pages,
         }
     except Exception as e:

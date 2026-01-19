@@ -8,10 +8,15 @@ from ui.state import SidebarInputs, SidebarState
 
 
 def _build_updated_config(config, inputs):
+    model_api_keys = config.get("model_api_keys", {}).copy()
+    model_api_keys[inputs.model_provider] = inputs.model_api_key
     updated_config = config.copy()
     updated_config.update(
         {
-            "openai_key": inputs.new_openai,
+            "model_api_keys": model_api_keys,
+            "model_provider": inputs.model_provider,
+            "model_name": inputs.model_name,
+            "agent_models": inputs.agent_models,
             "discord_webhook": inputs.new_discord,
             "enable_discord": inputs.enable_discord,
             "role": inputs.new_role,
@@ -190,7 +195,9 @@ def render_sidebar():
                     "⚠️ Google features are disabled. Add `credentials.json` to enable Gmail scanning and Drive uploads."
                 )
             elif enable_google:
-                with st.expander("☁️ Google Integrations (Gmail & Drive)", expanded=enable_google):
+                with st.expander(
+                    "☁️ Google Integrations (Gmail & Drive)", expanded=enable_google
+                ):
                     st.markdown("**📧 Gmail Scraper**")
                     st.caption("Scan your Gmail for Job Boards emails to find links.")
 
@@ -227,11 +234,127 @@ def render_sidebar():
                             "⚠️ *Add `credentials.json` to root folder to enable these features.*"
                         )
 
-            st.markdown("### API Keys")
-            new_openai = st.text_input(
-                "OpenAI Key", value=config["openai_key"], type="password"
+            st.markdown("### Model Settings")
+            model_provider = st.selectbox(
+                "Model Provider",
+                ["ollama", "openai"],
+                index=0 if config.get("model_provider", "ollama") == "ollama" else 1,
+                help="Use Ollama for a free local model, or OpenAI with an API key.",
             )
-            new_discord = st.text_input("Discord Webhook", value=config["discord_webhook"])
+            model_options = {
+                "ollama": ["llama3.1:8b"],
+                "openai": ["gpt-4o", "gpt-4o-mini"],
+            }
+            default_model = model_options[model_provider][0]
+            current_model = config.get("model_name", default_model)
+            if current_model not in model_options[model_provider]:
+                current_model = default_model
+            model_name = st.selectbox(
+                "Model",
+                model_options[model_provider],
+                index=model_options[model_provider].index(current_model),
+                help="Select a supported model.",
+            )
+            model_api_keys = config.get("model_api_keys", {})
+            stored_api_key = model_api_keys.get(model_provider, "")
+            if model_provider == "openai":
+                model_api_key = st.text_input(
+                    "Provider API Key",
+                    value=stored_api_key,
+                    type="password",
+                    help="Required for OpenAI.",
+                )
+            else:
+                st.text_input(
+                    "Provider API Key",
+                    value="",
+                    disabled=True,
+                    help="No API key required for Ollama.",
+                )
+                model_api_key = stored_api_key
+
+            if model_provider == "ollama":
+                st.caption(
+                    "Using Ollama: make sure Ollama is running and the model is pulled."
+                )
+
+            st.markdown("### Per-Agent Models (Optional)")
+            agent_models = config.get("agent_models", {})
+
+            def get_agent_provider(agent_name):
+                provider = agent_models.get(agent_name, {}).get("provider", "")
+                return provider or model_provider
+
+            def get_agent_model(agent_name, provider):
+                model = agent_models.get(agent_name, {}).get("model", "")
+                return model if model in model_options[provider] else model_options[provider][0]
+
+            def agent_model_select(agent_label, agent_key):
+                default_agent = {
+                    "provider": model_provider,
+                    "model": model_options[model_provider][0],
+                }
+                agent_config = agent_models.get(agent_key, default_agent)
+                stored_provider = agent_config.get("provider") or model_provider
+                override_global = bool(agent_config.get("provider"))
+                override_global = st.checkbox(
+                    f"{agent_label} Override Global",
+                    value=override_global,
+                    key=f"{agent_key}_use_global",
+                )
+                display_provider = stored_provider if override_global else model_provider
+                display_model = (
+                    agent_config.get("model")
+                    if override_global
+                    else model_name
+                )
+                provider_key = f"{agent_key}_provider"
+                model_key = f"{agent_key}_model"
+                if not override_global:
+                    st.session_state[provider_key] = display_provider
+                    st.session_state[model_key] = (
+                        display_model
+                        if display_model in model_options[display_provider]
+                        else model_options[display_provider][0]
+                    )
+                else:
+                    if provider_key not in st.session_state:
+                        st.session_state[provider_key] = display_provider
+                    if model_key not in st.session_state:
+                        st.session_state[model_key] = (
+                            display_model
+                            if display_model in model_options[display_provider]
+                            else model_options[display_provider][0]
+                        )
+                provider = st.selectbox(
+                    f"{agent_label} Provider",
+                    ["ollama", "openai"],
+                    help="Defaults to the global provider.",
+                    key=provider_key,
+                    disabled=not override_global,
+                )
+                if st.session_state.get(model_key) not in model_options[provider]:
+                    st.session_state[model_key] = model_options[provider][0]
+                model = st.selectbox(
+                    f"{agent_label} Model",
+                    model_options[provider],
+                    help="Defaults to the global model.",
+                    key=model_key,
+                    disabled=not override_global,
+                )
+                if not override_global:
+                    return {"provider": "", "model": ""}
+                return {"provider": provider, "model": model}
+
+            agent_tailor = agent_model_select("Tailor", "tailor")
+            agent_proofread = agent_model_select("Proofread", "proofread")
+            agent_filter = agent_model_select("Filter", "filter")
+            agent_parser = agent_model_select("Parser", "parser")
+
+            st.markdown("### API Keys")
+            new_discord = st.text_input(
+                "Discord Webhook", value=config["discord_webhook"]
+            )
             enable_discord = st.checkbox(
                 "Enable Notifications",
                 value=config.get("enable_discord", False),
@@ -241,7 +364,9 @@ def render_sidebar():
         st.markdown("---")
         if st.button("💾 Save Settings", type="primary", width="stretch"):
             inputs = SidebarInputs(
-                new_openai=new_openai,
+                model_api_key=model_api_key,
+                model_provider=model_provider,
+                model_name=model_name,
                 new_discord=new_discord,
                 enable_discord=enable_discord,
                 new_role=new_role,
@@ -260,12 +385,20 @@ def render_sidebar():
                 use_email=use_email,
                 email_limit=email_limit,
             )
+            inputs.agent_models = {
+                "tailor": agent_tailor,
+                "proofread": agent_proofread,
+                "filter": agent_filter,
+                "parser": agent_parser,
+            }
             updated_config = _build_updated_config(config, inputs)
             save_config(updated_config, current_profile_path)
             st.toast(f"Settings saved to {selected_profile}!", icon="✅")
 
     inputs = SidebarInputs(
-        new_openai=new_openai,
+        model_api_key=model_api_key,
+        model_provider=model_provider,
+        model_name=model_name,
         new_discord=new_discord,
         enable_discord=enable_discord,
         new_role=new_role,
@@ -284,6 +417,12 @@ def render_sidebar():
         use_email=use_email,
         email_limit=email_limit,
     )
+    inputs.agent_models = {
+        "tailor": agent_tailor,
+        "proofread": agent_proofread,
+        "filter": agent_filter,
+        "parser": agent_parser,
+    }
 
     return SidebarState(
         config=config,

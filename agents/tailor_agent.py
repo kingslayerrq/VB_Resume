@@ -1,9 +1,11 @@
+import datetime
 import json
 import os
-import datetime
 from typing import List, Optional
+
 from pydantic import BaseModel
-from openai import OpenAI
+
+from services.llm_client import chat_json
 
 # --- 1. Define Schema ---
 class Education(BaseModel):
@@ -62,13 +64,12 @@ def format_date(date_str):
         return date_str # Return original if parse fails
 
 # --- 2. The Tailor Agent ---
-def tailor_resume(master_json_path: str, job_description: str, feedback: str = "") -> dict:
-    
-    # Initialize Client HERE to ensure it uses the key set by config_manager
-    if not os.environ.get("OPENAI_API_KEY"):
-        raise ValueError("OpenAI API Key is missing. Please check your Dashboard settings.")
-        
-    client = OpenAI() # Automatically looks for os.environ["OPENAI_API_KEY"]
+def tailor_resume(
+    master_json_path: str,
+    job_description: str,
+    feedback: str = "",
+    llm_settings: Optional[dict] = None,
+) -> dict:
 
     with open(master_json_path, 'r') as f:
         master_resume_data = json.load(f)
@@ -99,6 +100,8 @@ def tailor_resume(master_json_path: str, job_description: str, feedback: str = "
     if feedback:
         feedback_instruction = f"PREVIOUS ATTEMPT REJECTED. FEEDBACK: {feedback}. YOU MUST FIX THIS."
 
+    system_prompt += "\nReturn ONLY valid JSON with no extra commentary."
+
     user_prompt = f"""
     TARGET JOB: {job_description}
     MASTER RESUME: {json.dumps(master_resume_data)}
@@ -106,17 +109,12 @@ def tailor_resume(master_json_path: str, job_description: str, feedback: str = "
     {feedback_instruction}
     """
 
-    completion = client.beta.chat.completions.parse(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        response_format=Resume,
+    tailored_dict = chat_json(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        llm_settings=llm_settings,
+        schema=Resume,
     )
-
-    tailored_resume = completion.choices[0].message.parsed
-    tailored_dict = tailored_resume.model_dump()
 
     # --- Post-Processing: Fix Dates ---
     print("📅 Formatting dates...")

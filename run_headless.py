@@ -36,12 +36,15 @@ if __name__ == "__main__":
     # 3. Load config
     config = load_config(config_path)
     
-    # 4. Check for API Key
-    if not config.get('openai_key'):
+    provider = config.get("model_provider", "ollama")
+    model_name = config.get("model_name", "llama3.1:8b")
+    api_key = config.get("model_api_keys", {}).get(provider)
+    if provider == "openai" and not api_key:
         headless_logger("❌ ERROR: OpenAI API Key missing in user_config.json. Aborting.")
         sys.exit(1)
-        
-    os.environ["OPENAI_API_KEY"] = config['openai_key']
+
+    if provider == "openai" and api_key:
+        os.environ["OPENAI_API_KEY"] = api_key
     
     # 5. Prepare Configuration
     scrape_conf = {
@@ -58,6 +61,12 @@ if __name__ == "__main__":
     headless_logger(f"   Role: {config['role']}")
     headless_logger(f"   Location: {config['location']}")
     
+    llm_settings = {
+        "provider": provider,
+        "model": model_name,
+        "api_key": api_key,
+    }
+
     # 6. Run Workflow
     try:
         asyncio.run(run_daily_workflow(
@@ -67,7 +76,8 @@ if __name__ == "__main__":
             safety_limit=config['safety_limit'],
             enable_discord=config.get('enable_discord', True),
             scrape_config=scrape_conf,
-            status_callback=headless_logger
+            status_callback=headless_logger,
+            llm_settings=llm_settings,
         ))
         headless_logger("✅ AUTOMATED RUN COMPLETE.")
     except Exception as e:

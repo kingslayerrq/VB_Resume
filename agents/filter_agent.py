@@ -1,7 +1,10 @@
 import json
 import os
+from typing import Optional
+
 from pydantic import BaseModel
-from openai import OpenAI
+
+from services.llm_client import chat_json, resolve_llm_settings
 
 # --- Schema ---
 class JobAssessment(BaseModel):
@@ -9,19 +12,20 @@ class JobAssessment(BaseModel):
     is_suitable: bool
     reasoning: str
 
-def assess_job_suitability(jd_text, master_json_path):
+def assess_job_suitability(
+    jd_text,
+    master_json_path,
+    llm_settings: Optional[dict] = None,
+):
     """
     Evaluates if the candidate is realistically qualified for the job.
     Uses gpt-4o-mini to save costs on high-volume filtering.
     """
     
-    # 0. SAFETY CHECK & CLIENT INIT
-    if not os.environ.get("OPENAI_API_KEY"):
-        # Fail safe: If no key, we can't assess, so we skip (return False)
+    settings = resolve_llm_settings(llm_settings)
+    if settings["provider"] == "openai" and not os.environ.get("OPENAI_API_KEY") and not settings.get("api_key"):
         print("   ⚠️ No OpenAI Key found. Skipping Assessment.")
         return JobAssessment(match_score=0, is_suitable=False, reasoning="Missing API Key")
-
-    client = OpenAI() # Lazy Load
 
     with open(master_json_path, 'r') as f:
         resume_data = json.load(f)
@@ -61,17 +65,16 @@ def assess_job_suitability(jd_text, master_json_path):
     {jd_text[:3000]}
     """
 
+    system_prompt += "\nReturn ONLY valid JSON with no extra commentary."
+
     try:
-        completion = client.beta.chat.completions.parse(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format=JobAssessment,
+        result = chat_json(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            llm_settings=llm_settings,
+            schema=JobAssessment,
         )
-        return completion.choices[0].message.parsed
-        
+        return JobAssessment(**result)
     except Exception as e:
         print(f"   ❌ Filter Agent Failed: {e}")
         # Default to False (Safety)

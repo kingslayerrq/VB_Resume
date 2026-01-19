@@ -31,13 +31,21 @@ def render_master_resume_tab(
 
         if uploaded_resume:
             if st.button("✨ Auto-Convert to JSON", type="primary"):
-                if not config["openai_key"]:
+                provider = config.get("model_provider", "ollama")
+                model_name = config.get("model_name", "llama3.1:8b")
+                api_key = config.get("model_api_keys", {}).get(provider)
+                if provider == "openai" and not api_key:
                     st.error("❌ Please set your OpenAI API Key in the Sidebar first!")
                 else:
                     with st.spinner("🧠 AI is reading your resume..."):
                         try:
+                            llm_settings = {
+                                "provider": provider,
+                                "model": model_name,
+                                "api_key": api_key,
+                            }
                             parsed_data = parse_resume_to_json(
-                                uploaded_resume, config["openai_key"]
+                                uploaded_resume, llm_settings
                             )
                             new_json_str = json.dumps(parsed_data, indent=4)
 

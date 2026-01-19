@@ -9,10 +9,14 @@ from main import run_daily_workflow
 
 
 def _apply_inputs_to_config(config, inputs):
+    model_api_keys = config.get("model_api_keys", {}).copy()
+    model_api_keys[inputs.model_provider] = inputs.model_api_key
     updated_config = config.copy()
     updated_config.update(
         {
-            "openai_key": inputs.new_openai,
+            "model_api_keys": model_api_keys,
+            "model_provider": inputs.model_provider,
+            "model_name": inputs.model_name,
             "discord_webhook": inputs.new_discord,
             "enable_discord": inputs.enable_discord,
             "role": inputs.new_role,
@@ -57,11 +61,15 @@ def render_runner_tab(resume_exists, config, inputs, current_profile_path):
 
         st.toast("Settings auto-saved & verified!", icon="🛡️")
 
-        if not config["openai_key"]:
+        provider = config.get("model_provider", "ollama")
+        model_name = config.get("model_name", "llama3.1:8b")
+        api_key = config.get("model_api_keys", {}).get(provider)
+        if provider == "openai" and not api_key:
             st.error("❌ OpenAI API Key is missing!")
             return
 
-        os.environ["OPENAI_API_KEY"] = config["openai_key"]
+        if provider == "openai" and api_key:
+            os.environ["OPENAI_API_KEY"] = api_key
         session_logs = []
 
         def ui_logger(msg):
@@ -85,6 +93,11 @@ def render_runner_tab(resume_exists, config, inputs, current_profile_path):
                     "email_max_results": config.get("email_max_results", 10),
                 }
 
+                llm_settings = {
+                    "provider": provider,
+                    "model": model_name,
+                    "api_key": api_key,
+                }
                 asyncio.run(
                     run_daily_workflow(
                         role=config["role"],
@@ -94,6 +107,7 @@ def render_runner_tab(resume_exists, config, inputs, current_profile_path):
                         enable_discord=config.get("enable_discord", True),
                         scrape_config=scrape_conf,
                         status_callback=ui_logger,
+                        llm_settings=llm_settings,
                     )
                 )
                 st.success("✅ Done!")

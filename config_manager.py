@@ -5,7 +5,18 @@ import os
 DEFAULT_PROFILE_PATH = os.path.join("profiles", "default.json")
 
 DEFAULT_CONFIG = {
-    "openai_key": "",
+    "model_api_keys": {
+        "openai": "",
+        "ollama": ""
+    },
+    "model_provider": "ollama",
+    "model_name": "llama3.1:8b",
+    "agent_models": {
+        "tailor": {"provider": "", "model": ""},
+        "proofread": {"provider": "", "model": ""},
+        "filter": {"provider": "", "model": ""},
+        "parser": {"provider": "", "model": ""}
+    },
     "discord_webhook": "",
     "role": "Software Engineer",
     "location": "New York",
@@ -37,6 +48,9 @@ def get_effective_config(profile_path):
         
     with open(profile_path, "r") as f:
         config = json.load(f)
+        for key, value in DEFAULT_CONFIG.items():
+            if key not in config:
+                config[key] = value
 
     # 2. Check Environment / Dependencies
     has_google_creds = os.path.exists("credentials.json")
@@ -49,6 +63,9 @@ def get_effective_config(profile_path):
         config['use_email'] = False
         config['enable_google'] = False
         # You could also log a warning here if you wanted
+    
+    if config.get("discord_webhook", "") == "":
+        config['enable_discord'] = False
 
     return config
 
@@ -88,5 +105,7 @@ def save_config(new_config, file_path=None):
     with open(file_path, "w") as f:
         json.dump(new_config, f, indent=4)
         
-    if new_config.get("openai_key"):
-        os.environ["OPENAI_API_KEY"] = new_config["openai_key"]
+    provider = new_config.get("model_provider", "ollama")
+    api_key = new_config.get("model_api_keys", {}).get(provider)
+    if provider == "openai" and api_key:
+        os.environ["OPENAI_API_KEY"] = api_key

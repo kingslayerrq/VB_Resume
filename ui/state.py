@@ -1,10 +1,12 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 
 
 @dataclass
 class SidebarInputs:
-    new_openai: str
+    model_api_key: str
+    model_provider: str
+    model_name: str
     new_discord: str
     enable_discord: bool
     new_role: str
@@ -22,6 +24,7 @@ class SidebarInputs:
     enable_drive: bool
     use_email: bool
     email_limit: int
+    agent_models: dict = field(default_factory=dict)
 
 
 @dataclass

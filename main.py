@@ -80,21 +80,32 @@ def log(msg, callback=None):
         callback(msg) # UI
 
 # --- SINGLE RESUME GENERATOR ---
-async def generate_resume_for_job(jd_text, master_json_path, output_filename, status_callback=None):
+async def generate_resume_for_job(
+    jd_text,
+    master_json_path,
+    output_filename,
+    status_callback=None,
+    llm_settings=None,
+):
     max_retries = 3
     current_feedback = ""
     
     # PHASE 1: CONTENT
     for attempt in range(max_retries):
         log(f"   Drafting Content (Attempt {attempt+1})...", status_callback)
-        tailored_data = tailor_resume(master_json_path, jd_text, feedback=current_feedback)
+        tailored_data = tailor_resume(
+            master_json_path,
+            jd_text,
+            feedback=current_feedback,
+            llm_settings=llm_settings,
+        )
         
         temp_json = "temp_tailored.json"
         with open(temp_json, "w") as f: 
             json.dump(tailored_data, f, indent=4)
             
         await render_resume(temp_json, output_filename, scale=1.0)
-        audit = proofread_resume(output_filename, jd_text)
+        audit = proofread_resume(output_filename, jd_text, llm_settings=llm_settings)
         
         if audit['content_passed']:
             log("   ✅ Content Approved.", status_callback)
@@ -121,7 +132,16 @@ async def generate_resume_for_job(jd_text, master_json_path, output_filename, st
     return True
 
 # --- THE WORKFLOW ---
-async def run_daily_workflow(role, location, target_successes, safety_limit, enable_discord, scrape_config, status_callback=None):
+async def run_daily_workflow(
+    role,
+    location,
+    target_successes,
+    safety_limit,
+    enable_discord,
+    scrape_config,
+    status_callback=None,
+    llm_settings=None,
+):
     # Setup Directories
     today_str = datetime.now().strftime("%Y-%m-%d")
     daily_output_dir = os.path.join(BASE_OUTPUT_DIR, today_str)
@@ -140,7 +160,10 @@ async def run_daily_workflow(role, location, target_successes, safety_limit, ena
     # 1. NOTIFY START
     send_start_notification(role, location, target_successes, enabled=enable_discord)
     log(f"\n🎯 GOAL: Generate {target_successes} successful resumes.", status_callback)
-    log("⚔️  MODE: Parallel Hunt (Email + Web)", status_callback)
+    if scrape_config.get('use_email', False):
+        log("⚔️  MODE: Parallel Hunt (Email + Web)", status_callback)
+    else:
+        log("⚔️  MODE: Web Scraper Only", status_callback)
 
     # --- MAIN LOOP ---
     while success_count < target_successes:
@@ -284,7 +307,9 @@ async def run_daily_workflow(role, location, target_successes, safety_limit, ena
                  continue
 
             # Assessment
-            assessment = assess_job_suitability(job['description'], "master_resume.json")
+            assessment = assess_job_suitability(
+                job["description"], "master_resume.json", llm_settings=llm_settings
+            )
             if not assessment.is_suitable:
                 log(f"   🛑 SKIPPING: Match Score {assessment.match_score}/100", status_callback)
                 save_to_history(job['url'], job.get('title', ''), job.get('company', ''), "FILTERED_OUT", source=job['Source'])
@@ -299,7 +324,13 @@ async def run_daily_workflow(role, location, target_successes, safety_limit, ena
             output_path = os.path.join(daily_output_dir, filename)
             
             # Tailor & Render
-            success = await generate_resume_for_job(job['description'], "master_resume.json", output_path, status_callback)
+            success = await generate_resume_for_job(
+                job["description"],
+                "master_resume.json",
+                output_path,
+                status_callback,
+                llm_settings=llm_settings,
+            )
             
             if success:
                 log(f"   📁 SAVED: {output_path}", status_callback)
