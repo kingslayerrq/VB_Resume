@@ -40,7 +40,7 @@ This project follows a **Service-Oriented Architecture** where the UI (`app.py` 
 ---
 
 ## 2. AI Tailoring Service
-**Files:** `agents/tailor_agent.py`, `services/llm_client.py`
+**Files:** `agents/tailor_agent.py`, `services/llm_client.py`, `services/model_registry.py`, `services/model_providers.json`
 **Libraries:** `openai`, `requests`
 
 ### Core Function: `tailor_resume(master_resume: dict, job_description: str, llm_settings: dict | None) -> dict`
@@ -55,6 +55,7 @@ This project follows a **Service-Oriented Architecture** where the UI (`app.py` 
 * **Output:** A new JSON dictionary (structure matches `master_resume`) containing *only* the relevant experience for this specific job.
 
 **Related LLM Consumers:** `agents/filter_agent.py`, `agents/proofread_agent.py`, `agents/resume_parser_agent.py` also use `services/llm_client.py`.
+**Provider Registry:** `services/model_providers.json` is the single source of truth for provider options, models, and model availability checks.
 
 ---
 
@@ -109,6 +110,10 @@ This project follows a **Service-Oriented Architecture** where the UI (`app.py` 
 * `model_provider`: `"ollama"` (default) or `"openai"`.
 * `model_name`: Model string for the selected provider (e.g., `llama3.1:8b`, `gpt-4o`).
 * `model_api_keys`: Map of provider → API key (e.g., `{"openai": "...", "ollama": ""}`).
+* `agent_models`: Optional per-agent overrides `{tailor, proofread, filter, parser}` with `provider`/`model`.
+
+**Provider Availability:**
+* Model checks use `services/model_providers.json` `model_check` definitions (e.g., Ollama `/api/show`, OpenAI `/v1/models`).
 
 ---
 

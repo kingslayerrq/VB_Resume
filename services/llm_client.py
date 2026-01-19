@@ -6,6 +6,8 @@ import requests
 from openai import OpenAI
 from pydantic import BaseModel
 
+from services.model_registry import get_provider_config
+
 
 DEFAULT_PROVIDER = "ollama"
 DEFAULT_MODEL = "llama3.1:8b"
@@ -19,6 +21,80 @@ def resolve_llm_settings(llm_settings: Optional[dict]) -> dict:
         "model": llm_settings.get("model", DEFAULT_MODEL),
         "api_key": llm_settings.get("api_key"),
     }
+
+
+def is_provider_available(provider: str, api_key: Optional[str], timeout: float = 1.0) -> bool:
+    config = get_provider_config(provider)
+    if not config:
+        return False
+
+    requires_key = config.get("requires_api_key", False)
+    if requires_key and not api_key:
+        return False
+
+    base_url = config.get("base_url")
+    health_path = config.get("health_path")
+    if not base_url or not health_path:
+        return True
+
+    url = f"{base_url}{health_path}"
+    headers = {}
+    if provider == "openai" and api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    try:
+        response = requests.get(url, headers=headers, timeout=timeout)
+        return response.ok
+    except requests.RequestException:
+        return False
+
+
+def is_model_available(
+    provider: str,
+    model: str,
+    api_key: Optional[str],
+    timeout: float = 2.0,
+) -> bool:
+    config = get_provider_config(provider)
+    if not config:
+        return False
+
+    check = config.get("model_check", {})
+    check_type = check.get("type")
+    base_url = config.get("base_url")
+    path = check.get("path")
+    if not base_url or not path or not check_type:
+        return False
+
+    headers = {}
+    if provider == "openai" and api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    if check_type == "ollama_show":
+        try:
+            response = requests.post(
+                f"{base_url}{path}",
+                json={"name": model},
+                timeout=timeout,
+            )
+            return response.ok
+        except requests.RequestException:
+            return False
+
+    if check_type == "openai_list":
+        if not api_key:
+            return False
+        try:
+            response = requests.get(f"{base_url}{path}", headers=headers, timeout=timeout)
+            if not response.ok:
+                return False
+            data = response.json()
+            models = {item.get("id") for item in data.get("data", [])}
+            return model in models
+        except requests.RequestException:
+            return False
+
+    return False
 
 
 def chat_json(
@@ -68,7 +144,8 @@ def chat_json(
             "stream": False,
             "options": {"temperature": temperature},
         }
-        response = requests.post("http://localhost:11434/api/chat", json=payload, timeout=120)
+        base_url = get_provider_config(provider).get("base_url", "http://localhost:11434")
+        response = requests.post(f"{base_url}/api/chat", json=payload, timeout=120)
         response.raise_for_status()
         content = response.json().get("message", {}).get("content", "")
         parsed = json.loads(content)

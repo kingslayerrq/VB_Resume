@@ -1,0 +1,17 @@
+{
+  "ollama": {
+    "type": "local",
+    "base_url": "http://localhost:11434",
+    "health_path": "/api/tags",
+    "model_check": {"type": "ollama_show", "path": "/api/show"},
+    "models": ["llama3.1:8b"]
+  },
+  "openai": {
+    "type": "service",
+    "base_url": "https://api.openai.com",
+    "health_path": "/v1/models",
+    "model_check": {"type": "openai_list", "path": "/v1/models"},
+    "requires_api_key": true,
+    "models": ["gpt-4o", "gpt-4o-mini"]
+  }
+}

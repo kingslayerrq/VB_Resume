@@ -4,6 +4,8 @@ import time
 import streamlit as st
 
 from config_manager import load_config, save_config, get_effective_config
+from services.llm_client import is_provider_available, is_model_available
+from services.model_registry import get_provider_models, get_provider_types
 from ui.state import SidebarInputs, SidebarState
 
 
@@ -101,12 +103,12 @@ def render_sidebar():
 
         st.markdown("---")
 
-        st.subheader("🎯 Job Search")
+        st.subheader("🎯 Job Search", help="Scrapers treat input as search queries, use 'United States' or 'USA' instead of 'UnitedStates' will give better results.")
         new_role = st.text_input(
             "Job Role", value=config["role"], placeholder="e.g. Software Engineer"
         )
         new_location = st.text_input(
-            "Location", value=config["location"], placeholder="e.g. New York or Remote"
+            "Location", value=config["location"], placeholder="e.g. New York or Remote", help="Use 'Remote' for remote jobs."
         )
 
         with st.expander("🛠️ Filters & Scraper", expanded=True):
@@ -235,16 +237,15 @@ def render_sidebar():
                         )
 
             st.markdown("### Model Settings")
+            provider_types = get_provider_types()
+            provider_options = sorted(provider_types.keys())
             model_provider = st.selectbox(
                 "Model Provider",
-                ["ollama", "openai"],
-                index=0 if config.get("model_provider", "ollama") == "ollama" else 1,
-                help="Use Ollama for a free local model, or OpenAI with an API key.",
+                provider_options,
+                index=provider_options.index(config.get("model_provider", "ollama")),
+                help="Choose a local or service provider.",
             )
-            model_options = {
-                "ollama": ["llama3.1:8b"],
-                "openai": ["gpt-4o", "gpt-4o-mini"],
-            }
+            model_options = {p: get_provider_models(p) for p in provider_options}
             default_model = model_options[model_provider][0]
             current_model = config.get("model_name", default_model)
             if current_model not in model_options[model_provider]:
@@ -273,13 +274,28 @@ def render_sidebar():
                 )
                 model_api_key = stored_api_key
 
-            if model_provider == "ollama":
-                st.caption(
-                    "Using Ollama: make sure Ollama is running and the model is pulled."
-                )
+            if provider_types.get(model_provider) == "local":
+                if is_model_available(model_provider, model_name, model_api_key):
+                    st.caption("Local model is available.")
+                elif is_provider_available(model_provider, model_api_key):
+                    st.warning(
+                        "Provider is reachable, but the model is not. Pull the model first."
+                    )
+                else:
+                    st.warning(
+                        "Local model provider is not reachable. Start it before running."
+                    )
 
             st.markdown("### Per-Agent Models (Optional)")
             agent_models = config.get("agent_models", {})
+            has_overrides = any(
+                (agent.get("provider") or agent.get("model")) for agent in agent_models.values()
+            )
+            enable_overrides = st.checkbox(
+                "Enable Per-Agent Overrides",
+                value=has_overrides,
+                key="enable_agent_overrides",
+            )
 
             def get_agent_provider(agent_name):
                 provider = agent_models.get(agent_name, {}).get("provider", "")
@@ -328,7 +344,7 @@ def render_sidebar():
                         )
                 provider = st.selectbox(
                     f"{agent_label} Provider",
-                    ["ollama", "openai"],
+                    provider_options,
                     help="Defaults to the global provider.",
                     key=provider_key,
                     disabled=not override_global,
@@ -346,10 +362,24 @@ def render_sidebar():
                     return {"provider": "", "model": ""}
                 return {"provider": provider, "model": model}
 
-            agent_tailor = agent_model_select("Tailor", "tailor")
-            agent_proofread = agent_model_select("Proofread", "proofread")
-            agent_filter = agent_model_select("Filter", "filter")
-            agent_parser = agent_model_select("Parser", "parser")
+            def agent_override_block(agent_label, agent_key):
+                if not enable_overrides:
+                    return {"provider": "", "model": ""}
+                default_override = bool(agent_models.get(agent_key, {}).get("provider"))
+                override_enabled = st.checkbox(
+                    f"Override {agent_label}",
+                    value=default_override,
+                    key=f"{agent_key}_override_toggle",
+                )
+                if not override_enabled:
+                    return {"provider": "", "model": ""}
+                with st.expander(f"{agent_label} Override Settings", expanded=True):
+                    return agent_model_select(agent_label, agent_key)
+
+            agent_tailor = agent_override_block("Tailor", "tailor")
+            agent_proofread = agent_override_block("Proofread", "proofread")
+            agent_filter = agent_override_block("Filter", "filter")
+            agent_parser = agent_override_block("Parser", "parser")
 
             st.markdown("### API Keys")
             new_discord = st.text_input(
