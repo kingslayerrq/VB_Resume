@@ -25,6 +25,9 @@ class SidebarInputs:
     use_email: bool
     email_limit: int
     agent_models: dict = field(default_factory=dict)
+    enable_notion: bool = False
+    notion_api_key: str = ""
+    notion_database_id: str = ""
 
 
 @dataclass

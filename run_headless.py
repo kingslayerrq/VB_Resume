@@ -12,15 +12,23 @@ from config_manager import load_config
 from main import run_daily_workflow
 
 # --- SIMPLE FILE LOGGER ---
+_log_date = None
+
 def headless_logger(msg):
     """Writes logs to daily_run.log and prints to console"""
+    global _log_date
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    today = time.strftime("%Y-%m-%d")
     formatted_msg = f"[{timestamp}] {msg}"
     
     print(formatted_msg)
     
-    # Append to log file
-    with open("daily_run.log", "a", encoding="utf-8") as f:
+    # Overwrite once per day, append afterward
+    mode = "a"
+    if _log_date != today:
+        _log_date = today
+        mode = "w"
+    with open("daily_run.log", mode, encoding="utf-8") as f:
         f.write(formatted_msg + "\n")
 
 if __name__ == "__main__":
@@ -65,6 +73,13 @@ if __name__ == "__main__":
         "provider": provider,
         "model": model_name,
         "api_key": api_key,
+        "model_api_keys": config.get("model_api_keys", {}),
+        "agent_models": config.get("agent_models", {}),
+    }
+    notion_config = {
+        "enable": config.get("enable_notion", False),
+        "api_key": config.get("notion_api_key", ""),
+        "database_id": config.get("notion_database_id", ""),
     }
 
     # 6. Run Workflow
@@ -78,6 +93,7 @@ if __name__ == "__main__":
             scrape_config=scrape_conf,
             status_callback=headless_logger,
             llm_settings=llm_settings,
+            notion_config=notion_config,
         ))
         headless_logger("✅ AUTOMATED RUN COMPLETE.")
     except Exception as e:

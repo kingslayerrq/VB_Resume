@@ -72,6 +72,7 @@ def render_history_tab():
                                     mime="application/pdf",
                                     type="primary",
                                     width="stretch",
+                                    key=f"pdf_download_{index}",
                                 )
 
                         with c3:

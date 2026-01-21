@@ -1,6 +1,7 @@
-import pytest
 import os
+import pytest
 from services.google.drive_agent import upload_resume_to_drive
+from utils.console_logger import safe_print
 
 # Skip if no credentials (avoids crashing in CI/CD)
 @pytest.mark.skipif(not os.path.exists("token.json"), reason="No Google Token found")
@@ -8,7 +9,7 @@ def test_real_drive_upload():
     """
     Integration: Actually uploads a dummy file to Google Drive.
     """
-    print("\n☁️ Testing Real Google Drive Upload...")
+    safe_print("\n☁️ Testing Real Google Drive Upload...")
 
     # 1. Create a dummy file to upload
     test_filename = "test_upload_artifact.txt"
@@ -22,7 +23,7 @@ def test_real_drive_upload():
         # 3. Validation
         assert link is not None
         assert "drive.google.com" in link or "google.com" in link
-        print(f"   ✅ Success! File uploaded to: {link}")
+        safe_print(f"   ✅ Success! File uploaded to: {link}")
 
     finally:
         # 4. Cleanup local file

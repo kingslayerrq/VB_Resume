@@ -36,6 +36,9 @@ def _build_updated_config(config, inputs):
             "enable_drive": inputs.enable_drive,
             "use_email": inputs.use_email,
             "email_max_results": inputs.email_limit,
+            "enable_notion": inputs.enable_notion,
+            "notion_api_key": inputs.notion_api_key,
+            "notion_database_id": inputs.notion_database_id,
         }
     )
     return updated_config
@@ -178,6 +181,9 @@ def render_sidebar():
             email_limit = config.get("email_max_results", 10)
             enable_drive = config.get("enable_drive", False)
             enable_google = config.get("enable_google", False)
+            enable_notion = config.get("enable_notion", False)
+            notion_api_key = config.get("notion_api_key", "")
+            notion_database_id = config.get("notion_database_id", "")
 
             has_google_creds = os.path.exists("credentials.json")
 
@@ -236,13 +242,34 @@ def render_sidebar():
                             "⚠️ *Add `credentials.json` to root folder to enable these features.*"
                         )
 
+            st.subheader("🧾 Notion")
+            enable_notion = st.checkbox(
+                "Enable Notion Sync",
+                value=config.get("enable_notion", False),
+                help="Sync daily history entries to Notion.",
+            )
+            notion_api_key = st.text_input(
+                "Notion API Key",
+                value=config.get("notion_api_key", ""),
+                type="password",
+                disabled=not enable_notion,
+            )
+            notion_database_id = st.text_input(
+                "Notion Database ID",
+                value=config.get("notion_database_id", ""),
+                disabled=not enable_notion,
+            )
+
             st.markdown("### Model Settings")
             provider_types = get_provider_types()
             provider_options = sorted(provider_types.keys())
+            default_provider = config.get("model_provider", "ollama")
+            if default_provider not in provider_options:
+                default_provider = provider_options[0]
             model_provider = st.selectbox(
                 "Model Provider",
                 provider_options,
-                index=provider_options.index(config.get("model_provider", "ollama")),
+                index=provider_options.index(default_provider),
                 help="Choose a local or service provider.",
             )
             model_options = {p: get_provider_models(p) for p in provider_options}
@@ -414,6 +441,9 @@ def render_sidebar():
                 enable_drive=enable_drive,
                 use_email=use_email,
                 email_limit=email_limit,
+                enable_notion=enable_notion,
+                notion_api_key=notion_api_key,
+                notion_database_id=notion_database_id,
             )
             inputs.agent_models = {
                 "tailor": agent_tailor,
@@ -446,6 +476,9 @@ def render_sidebar():
         enable_drive=enable_drive,
         use_email=use_email,
         email_limit=email_limit,
+        enable_notion=enable_notion,
+        notion_api_key=notion_api_key,
+        notion_database_id=notion_database_id,
     )
     inputs.agent_models = {
         "tailor": agent_tailor,

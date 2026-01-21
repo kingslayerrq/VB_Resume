@@ -17,6 +17,9 @@ DEFAULT_CONFIG = {
         "filter": {"provider": "", "model": ""},
         "parser": {"provider": "", "model": ""}
     },
+    "enable_notion": False,
+    "notion_api_key": "",
+    "notion_database_id": "",
     "discord_webhook": "",
     "role": "Software Engineer",
     "location": "New York",

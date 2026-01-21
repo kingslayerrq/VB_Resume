@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import unquote, urlparse, parse_qs
 from agents.search_agent import fetch_job_page_data
 from utils.google_utils import get_google_service
+from utils.console_logger import safe_print
 import asyncio
 
 
@@ -51,10 +52,10 @@ def fetch_job_urls_from_gmail(max_results=10):
         messages = results.get('messages', [])
 
         if not messages:
-            print("   📭 No new LinkedIn job emails found.")
+            safe_print("   📭 No new LinkedIn job emails found.")
             return []
 
-        print(f"   📧 Found {len(messages)} new job alert emails...")
+        safe_print(f"   📧 Found {len(messages)} new job alert emails...")
 
         for msg in messages:
             # Get full email data
@@ -79,7 +80,7 @@ def fetch_job_urls_from_gmail(max_results=10):
 
             # Find job links
             links = soup.find_all('a', href=True)
-            print(f"   🔍 Scanning {len(links)} links in email...")
+            safe_print(f"   🔍 Scanning {len(links)} links in email...")
 
             seen_in_this_email = set() # Track duplicates locally
 
@@ -98,7 +99,7 @@ def fetch_job_urls_from_gmail(max_results=10):
                     
                     seen_in_this_email.add(base_url)
 
-                    print(f"      ✅ Found Job: {base_url[:60]}...")
+                    safe_print(f"      ✅ Found Job: {base_url[:60]}...")
                     job_list.append({
                         "url": base_url, # Save the clean URL without tracking junk
                         "title": "Detected via Email", 
@@ -112,7 +113,7 @@ def fetch_job_urls_from_gmail(max_results=10):
         return job_list
         
     except Exception as e:
-        print(f"   ❌ Gmail Scan Failed: {e}")
+        safe_print(f"   ❌ Gmail Scan Failed: {e}")
         return []
     
 # For testing purposes

@@ -1,6 +1,7 @@
 import os
 from googleapiclient.http import MediaFileUpload
 from utils.google_utils import get_google_service 
+from utils.console_logger import safe_print
 
 def upload_resume_to_drive(file_path, folder_name="AI_Resumes"):
     """Uploads a PDF to a specific folder in Google Drive."""
@@ -25,7 +26,7 @@ def upload_resume_to_drive(file_path, folder_name="AI_Resumes"):
             }
             folder = service.files().create(body=folder_metadata, fields='id').execute()
             folder_id = folder.get('id')
-            print(f"   📁 Created Drive Folder: {folder_name}")
+            safe_print(f"   📁 Created Drive Folder: {folder_name}")
         else:
             folder_id = items[0]['id']
 
@@ -42,9 +43,9 @@ def upload_resume_to_drive(file_path, folder_name="AI_Resumes"):
             fields='id, webViewLink'
         ).execute()
         
-        print(f"   ☁️  Uploaded to Drive: {file.get('webViewLink')}")
+        safe_print(f"   ☁️  Uploaded to Drive: {file.get('webViewLink')}")
         return file.get('webViewLink')
 
     except Exception as e:
-        print(f"   ❌ Drive Upload Failed: {e}")
+        safe_print(f"   ❌ Drive Upload Failed: {e}")
         return None

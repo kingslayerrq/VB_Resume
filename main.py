@@ -15,6 +15,8 @@ from agents.layout_agent import render_resume
 from agents.proofread_agent import proofread_resume
 from agents.filter_agent import assess_job_suitability
 from services.notification.notification_agent import send_start_notification, send_summary_notification
+from services.notion_sync import sync_history_to_notion
+from services.llm_client import is_model_available, resolve_llm_settings
 from services.google.drive_agent import upload_resume_to_drive
 from services.google.gmail_job_agent import fetch_job_urls_from_gmail
 
@@ -72,6 +74,10 @@ def save_to_history(job_url, title, company, status, drive_link=None, source=Non
     with open(HISTORY_FILE, "w") as f:
         json.dump(history, f, indent=4)
 
+def clear_history():
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump([], f, indent=4)
+
 # --- LOGGING HELPER ---
 def log(msg, callback=None):
     """Prints to console AND sends to Streamlit if callback exists"""
@@ -79,16 +85,27 @@ def log(msg, callback=None):
     if callback:
         callback(msg) # UI
 
+def _resolve_agent_settings(agent_key, base_settings, agent_models, model_api_keys):
+    agent_config = (agent_models or {}).get(agent_key, {})
+    provider = agent_config.get("provider") or base_settings["provider"]
+    model = agent_config.get("model") or base_settings["model"]
+    api_key = model_api_keys.get(provider) or base_settings.get("api_key")
+    return {"provider": provider, "model": model, "api_key": api_key}
+
 # --- SINGLE RESUME GENERATOR ---
 async def generate_resume_for_job(
     jd_text,
     master_json_path,
     output_filename,
     status_callback=None,
+    tailor_settings=None,
+    proofread_settings=None,
     llm_settings=None,
 ):
     max_retries = 3
     current_feedback = ""
+    active_tailor_settings = tailor_settings or llm_settings
+    active_proofread_settings = proofread_settings or llm_settings
     
     # PHASE 1: CONTENT
     for attempt in range(max_retries):
@@ -97,7 +114,7 @@ async def generate_resume_for_job(
             master_json_path,
             jd_text,
             feedback=current_feedback,
-            llm_settings=llm_settings,
+            llm_settings=active_tailor_settings,
         )
         
         temp_json = "temp_tailored.json"
@@ -105,7 +122,11 @@ async def generate_resume_for_job(
             json.dump(tailored_data, f, indent=4)
             
         await render_resume(temp_json, output_filename, scale=1.0)
-        audit = proofread_resume(output_filename, jd_text, llm_settings=llm_settings)
+        audit = proofread_resume(
+            output_filename,
+            jd_text,
+            llm_settings=active_proofread_settings,
+        )
         
         if audit['content_passed']:
             log("   ✅ Content Approved.", status_callback)
@@ -141,6 +162,7 @@ async def run_daily_workflow(
     scrape_config,
     status_callback=None,
     llm_settings=None,
+    notion_config=None,
 ):
     # Setup Directories
     today_str = datetime.now().strftime("%Y-%m-%d")
@@ -164,6 +186,25 @@ async def run_daily_workflow(
         log("⚔️  MODE: Parallel Hunt (Email + Web)", status_callback)
     else:
         log("⚔️  MODE: Web Scraper Only", status_callback)
+
+    base_settings = resolve_llm_settings(llm_settings)
+    model_api_keys = (llm_settings or {}).get("model_api_keys", {})
+    agent_models = (llm_settings or {}).get("agent_models", {})
+
+    active_models = {(base_settings["provider"], base_settings["model"])}
+    for agent in agent_models.values():
+        agent_provider = agent.get("provider") or base_settings["provider"]
+        agent_model = agent.get("model") or base_settings["model"]
+        active_models.add((agent_provider, agent_model))
+
+    for active_provider, active_model in active_models:
+        active_key = model_api_keys.get(active_provider) or base_settings.get("api_key")
+        if not is_model_available(active_provider, active_model, active_key):
+            log(
+                f"❌ Model '{active_model}' for provider '{active_provider}' is not available.",
+                status_callback,
+            )
+            return
 
     # --- MAIN LOOP ---
     while success_count < target_successes:
@@ -307,8 +348,14 @@ async def run_daily_workflow(
                  continue
 
             # Assessment
+            filter_settings = _resolve_agent_settings(
+                "filter",
+                base_settings,
+                agent_models,
+                model_api_keys,
+            )
             assessment = assess_job_suitability(
-                job["description"], "master_resume.json", llm_settings=llm_settings
+                job["description"], "master_resume.json", llm_settings=filter_settings
             )
             if not assessment.is_suitable:
                 log(f"   🛑 SKIPPING: Match Score {assessment.match_score}/100", status_callback)
@@ -329,7 +376,18 @@ async def run_daily_workflow(
                 "master_resume.json",
                 output_path,
                 status_callback,
-                llm_settings=llm_settings,
+                tailor_settings=_resolve_agent_settings(
+                    "tailor",
+                    base_settings,
+                    agent_models,
+                    model_api_keys,
+                ),
+                proofread_settings=_resolve_agent_settings(
+                    "proofread",
+                    base_settings,
+                    agent_models,
+                    model_api_keys,
+                ),
             )
             
             if success:
@@ -372,6 +430,26 @@ async def run_daily_workflow(
     if enable_discord:
         log("\n📨 Sending Discord Summary...", status_callback)
         send_summary_notification(successful_jobs_data, enabled=enable_discord)
+
+    if notion_config and notion_config.get("enable"):
+        notion_api_key = notion_config.get("api_key")
+        notion_database_id = notion_config.get("database_id")
+        if notion_api_key and notion_database_id and os.path.exists(HISTORY_FILE):
+            try:
+                result = sync_history_to_notion(
+                    HISTORY_FILE,
+                    notion_database_id,
+                    notion_api_key,
+                )
+                log(
+                    f"🧾 Notion sync complete: {result['synced']} synced, {result['skipped']} skipped.",
+                    status_callback,
+                )
+                if result["synced"] > 0 and result["skipped"] == 0:
+                    clear_history()
+                    log("🧹 History cleared after successful Notion sync.", status_callback)
+            except Exception as e:
+                log(f"⚠️ Notion sync failed: {e}", status_callback)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

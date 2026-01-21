@@ -97,7 +97,18 @@ This project follows a **Service-Oriented Architecture** where the UI (`app.py` 
 
 ---
 
-## 6. Config & State Management
+## 6. Notion Sync Service
+**File:** `services/notion_sync.py`
+**Libraries:** `requests`
+
+### Core Function: `sync_history_to_notion(history_path: str, database_id: str, api_key: str) -> dict`
+* **Input:** `history.json`, Notion database ID, Notion API key.
+* **Responsibility:** Upserts each history entry into the Notion database using the Job URL as a unique key.
+* **Output:** A dict with `synced` and `skipped` counts.
+
+---
+
+## 7. Config & State Management
 **File:** `config_manager.py`
 
 ### Key Functions:
@@ -115,6 +126,11 @@ This project follows a **Service-Oriented Architecture** where the UI (`app.py` 
 **Provider Availability:**
 * Model checks use `services/model_providers.json` `model_check` definitions (e.g., Ollama `/api/show`, OpenAI `/v1/models`).
 
+**Notion Settings (Config Keys):**
+* `enable_notion`: Boolean toggle to sync history entries to Notion.
+* `notion_api_key`: Notion integration token.
+* `notion_database_id`: Target database ID.
+
 ---
 
 ## 🔄 Workflow Orchestration (The Runner)
@@ -129,10 +145,13 @@ The `run_daily_workflow` function ties these agents together sequentially:
     * Call `drive_agent.upload_resume_to_drive` (if enabled) → `drive_link`.
     * Update `history.json`.
 4.  **Notify:** Call `notification_agent` with results.
+5.  **Sync:** If Notion sync is enabled and completes with zero skips, clear `history.json`.
+
+**Model Resolution:** `run_daily_workflow` resolves per-agent overrides from `agent_models` (tailor/filter/proofread/parser) and validates each active provider/model before starting.
 
 ---
 
-## 7. 🛠️ Maintenance Protocol (The Loop)
+## 8. 🛠️ Maintenance Protocol (The Loop)
 **Rule for AI Agents & Developers:**
 Any time you modify the codebase, add a new feature, or change a function signature, you **MUST** update this `agents.md` file to reflect those changes immediately.
 

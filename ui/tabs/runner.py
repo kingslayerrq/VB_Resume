@@ -6,7 +6,6 @@ import streamlit as st
 
 from config_manager import save_config, get_effective_config
 from main import run_daily_workflow
-from services.llm_client import is_model_available
 
 
 def _apply_inputs_to_config(config, inputs):
@@ -35,6 +34,10 @@ def _apply_inputs_to_config(config, inputs):
             "enable_drive": inputs.enable_drive,
             "use_email": inputs.use_email,
             "email_max_results": inputs.email_limit,
+            "agent_models": inputs.agent_models,
+            "enable_notion": inputs.enable_notion,
+            "notion_api_key": inputs.notion_api_key,
+            "notion_database_id": inputs.notion_database_id,
         }
     )
     return updated_config
@@ -62,39 +65,15 @@ def render_runner_tab(resume_exists, config, inputs, current_profile_path):
 
         st.toast("Settings auto-saved & verified!", icon="🛡️")
 
-        model_type = config.get("type", "local")
         provider = config.get("model_provider", "ollama")
         model_name = config.get("model_name", "llama3.1:8b")
         api_key = config.get("model_api_keys", {}).get(provider)
-        agent_models = config.get("agent_models", {})
-
-        def active_models():
-            entries = {(provider, model_name)}
-            for agent in agent_models.values():
-                agent_provider = agent.get("provider") or provider
-                agent_model = agent.get("model") or model_name
-                entries.add((agent_provider, agent_model))
-            return entries
         if provider == "openai" and not api_key:
             st.error("❌ OpenAI API Key is missing!")
             return
 
         if provider == "openai" and api_key:
             os.environ["OPENAI_API_KEY"] = api_key
-
-
-        for active_provider, active_model in active_models():
-            active_key = config.get("model_api_keys", {}).get(active_provider)
-            if not is_model_available(active_provider, active_model, active_key):
-                if model_type == "local":
-                    st.error(
-                        f"❌ Local model '{active_model}' for provider '{active_provider}' is not available. Ensure the model is hosted locally."
-                    )
-                else:
-                    st.error(
-                        f"❌ Model '{active_model}' for provider '{active_provider}' is not available."
-                    )
-                return
         session_logs = []
 
         def ui_logger(msg):
@@ -122,6 +101,13 @@ def render_runner_tab(resume_exists, config, inputs, current_profile_path):
                     "provider": provider,
                     "model": model_name,
                     "api_key": api_key,
+                    "model_api_keys": config.get("model_api_keys", {}),
+                    "agent_models": config.get("agent_models", {}),
+                }
+                notion_config = {
+                    "enable": config.get("enable_notion", False),
+                    "api_key": config.get("notion_api_key", ""),
+                    "database_id": config.get("notion_database_id", ""),
                 }
                 asyncio.run(
                     run_daily_workflow(
@@ -133,6 +119,7 @@ def render_runner_tab(resume_exists, config, inputs, current_profile_path):
                         scrape_config=scrape_conf,
                         status_callback=ui_logger,
                         llm_settings=llm_settings,
+                        notion_config=notion_config,
                     )
                 )
                 st.success("✅ Done!")

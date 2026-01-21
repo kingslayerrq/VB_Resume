@@ -12,11 +12,12 @@ This application automates the entire job application lifecycle. It works in par
 
 ### 🧠 Core Intelligence
 * **🕵️ Dual-Engine Scraping:** Hunts for jobs on Web Boards (LinkedIn, Indeed, Glassdoor, ZipRecruiter) AND scans your **Gmail** for "Job Alert" emails simultaneously.
-* **🤖 AI Tailoring:** Uses OpenAI (GPT-4o) to rewrite your resume bullet points for every single application, optimizing for ATS keywords and relevance.
+* **🤖 AI Tailoring:** Supports local Ollama models or OpenAI (GPT-4o / GPT-4o-mini) to tailor your resume for each job description.
 * **🔍 Deep Enrichment:** Automatically visits job links found in emails to scrape the *real* job title and company name, fixing generic "LinkedIn Import" errors.
 
 ### ⚙️ Automation & Cloud
 * **☁️ Cloud Sync:** Automatically uploads every generated resume to a specific folder in your **Google Drive** for easy access on mobile.
+* **🧾 Notion Sync:** Optionally sync each history entry to a Notion database for tracking.
 * **⚡ Daily Automation:** Built-in Task Scheduler integration to run "headless" in the background every morning.
 * **🔔 Discord Notifications:** Get a summary of all generated resumes (with Drive links) sent directly to your phone.
 
@@ -48,8 +49,12 @@ To use the Gmail and Drive features, you must bring your own Google API Key.
 ## ⚙️ Configuration
 
 1.  **Master Resume:** Go to the "📝 Master Resume" tab. Upload your current PDF resume to auto-convert it into the Master JSON format.
-2.  **API Keys:** Open the Sidebar > **API Keys**. Enter your **OpenAI API Key**.
+2.  **Models & API Keys:** Open the Sidebar > **Model Settings**. Pick a provider (Ollama or OpenAI).
+    * **Ollama (Free Local):** Install Ollama, pull a model (e.g., `ollama pull llama3.1:8b`), and ensure Ollama is running.
+    * **OpenAI:** Enter your API key in **Provider API Key**.
     * *(Optional)* Add a Discord Webhook URL for notifications.
+    * *(Optional)* Enable **Notion Sync** and provide your Notion API key + database ID (e.g., the “Daily Resume Hunt” database).
+    * *(Optional)* Add the **Notion Parent Page ID** to group daily date pages.
 3.  **Job Settings:** Set your target Role (e.g., "Python Developer") and Location.
 4.  **Email Integration:** In "Settings", toggle **Gmail Scraper** on to process your daily job alert emails.
 
@@ -72,9 +77,10 @@ You don't need to keep the app open!
 ## 🛠️ Tech Stack
 
 * **UI:** Streamlit
-* **AI:** OpenAI GPT-4o / GPT-4o-mini
+* **AI:** Ollama (local) or OpenAI GPT-4o / GPT-4o-mini
 * **Scraping:** JobSpy + Playwright + Gmail API
 * **Rendering:** Jinja2 + HTML/CSS
+* **Integrations:** Notion (optional)
 
 ---
 
